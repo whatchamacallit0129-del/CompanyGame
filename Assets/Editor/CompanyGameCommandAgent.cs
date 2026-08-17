@@ -28,30 +28,53 @@ public static class CompanyGameCommandAgent
         {
             string command = File.ReadAllText(commandPath).Trim();
 
-            if (command == "CREATE_INTERACTABLE_OBJECT")
+            bool executed = ExecuteCommand(command);
+
+            if (executed)
             {
-                CreateInteractableObject();
-
                 File.Delete(commandPath);
-
                 AssetDatabase.Refresh();
 
-                Debug.Log("[Company Game] Command executed: CREATE_INTERACTABLE_OBJECT");
-            }
-            else
-            {
-                Debug.LogWarning("[Company Game] Unknown command: " + command);
+                Debug.Log(
+                    "[Company Game] Command executed: " + command
+                );
             }
         }
         catch (Exception exception)
         {
-            Debug.LogError("[Company Game] Command execution failed:\n" + exception);
+            Debug.LogError(
+                "[Company Game] Command execution failed:\n" + exception
+            );
+        }
+    }
+
+    private static bool ExecuteCommand(string command)
+    {
+        switch (command)
+        {
+            case "CREATE_INTERACTABLE_OBJECT":
+                CreateInteractableObject();
+                return true;
+
+            case "CREATE_EMPTY_OBJECT":
+                CreateEmptyObject();
+                return true;
+
+            case "DELETE_SELECTED_OBJECT":
+                return DeleteSelectedObject();
+
+            default:
+                Debug.LogWarning(
+                    "[Company Game] Unknown command: " + command
+                );
+                return false;
         }
     }
 
     private static void CreateInteractableObject()
     {
-        GameObject interactable = new GameObject("InteractableObject");
+        GameObject interactable =
+            new GameObject("InteractableObject");
 
         SpriteRenderer spriteRenderer =
             interactable.AddComponent<SpriteRenderer>();
@@ -70,6 +93,50 @@ public static class CompanyGameCommandAgent
 
         EditorUtility.SetDirty(interactable);
 
-        Debug.Log("[Company Game] InteractableObject created automatically.");
+        Debug.Log(
+            "[Company Game] InteractableObject created automatically."
+        );
+    }
+
+    private static void CreateEmptyObject()
+    {
+        GameObject emptyObject =
+            new GameObject("CompanyObject");
+
+        Undo.RegisterCreatedObjectUndo(
+            emptyObject,
+            "Create Company Object"
+        );
+
+        Selection.activeGameObject = emptyObject;
+
+        EditorUtility.SetDirty(emptyObject);
+
+        Debug.Log(
+            "[Company Game] CompanyObject created automatically."
+        );
+    }
+
+    private static bool DeleteSelectedObject()
+    {
+        GameObject selectedObject =
+            Selection.activeGameObject;
+
+        if (selectedObject == null)
+        {
+            Debug.LogWarning(
+                "[Company Game] No GameObject is selected."
+            );
+
+            return false;
+        }
+
+        Undo.DestroyObjectImmediate(selectedObject);
+
+        Debug.Log(
+            "[Company Game] Selected object deleted automatically."
+        );
+
+        return true;
     }
 }
