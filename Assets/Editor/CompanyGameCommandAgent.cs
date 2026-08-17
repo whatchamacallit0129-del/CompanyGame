@@ -60,13 +60,19 @@ public static class CompanyGameCommandAgent
                 CreateEmptyObject();
                 return true;
 
-            case "DELETE_SELECTED_OBJECT":
-                return DeleteSelectedObject();
-
             default:
+                if (command.StartsWith("DELETE_OBJECT:"))
+                {
+                    string objectName =
+                        command.Substring("DELETE_OBJECT:".Length).Trim();
+
+                    return DeleteObjectByName(objectName);
+                }
+
                 Debug.LogWarning(
                     "[Company Game] Unknown command: " + command
                 );
+
                 return false;
         }
     }
@@ -76,8 +82,7 @@ public static class CompanyGameCommandAgent
         GameObject interactable =
             new GameObject("InteractableObject");
 
-        SpriteRenderer spriteRenderer =
-            interactable.AddComponent<SpriteRenderer>();
+        interactable.AddComponent<SpriteRenderer>();
 
         BoxCollider2D collider =
             interactable.AddComponent<BoxCollider2D>();
@@ -117,24 +122,34 @@ public static class CompanyGameCommandAgent
         );
     }
 
-    private static bool DeleteSelectedObject()
+    private static bool DeleteObjectByName(string objectName)
     {
-        GameObject selectedObject =
-            Selection.activeGameObject;
-
-        if (selectedObject == null)
+        if (string.IsNullOrEmpty(objectName))
         {
             Debug.LogWarning(
-                "[Company Game] No GameObject is selected."
+                "[Company Game] Delete command has no object name."
             );
 
             return false;
         }
 
-        Undo.DestroyObjectImmediate(selectedObject);
+        GameObject target =
+            GameObject.Find(objectName);
+
+        if (target == null)
+        {
+            Debug.LogWarning(
+                "[Company Game] Object not found: " + objectName
+            );
+
+            return false;
+        }
+
+        Undo.DestroyObjectImmediate(target);
 
         Debug.Log(
-            "[Company Game] Selected object deleted automatically."
+            "[Company Game] Object deleted automatically: "
+            + objectName
         );
 
         return true;
