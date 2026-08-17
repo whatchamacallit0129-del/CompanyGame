@@ -30,3 +30,4 @@ public static class CompanyGameTools
         Debug.Log("[Company Game] InteractableObject created with SpriteRenderer, BoxCollider2D and DraggableObject2D.");
     }
 }
+
