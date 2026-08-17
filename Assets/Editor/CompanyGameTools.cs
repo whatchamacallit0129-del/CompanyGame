@@ -22,12 +22,13 @@ public static class CompanyGameTools
 
         // Reuse the project's existing selection component.
         DraggableObject2D draggable = interactable.AddComponent<DraggableObject2D>();
+        interactable.AddComponent<InteractableObject2D>();
 
         Undo.RegisterCreatedObjectUndo(interactable, "Create Interactable Object");
         Selection.activeGameObject = interactable;
         EditorGUIUtility.PingObject(interactable);
 
-        Debug.Log("[Company Game] InteractableObject created with SpriteRenderer, BoxCollider2D and DraggableObject2D.");
+        Debug.Log("[Company Game] InteractableObject created with SpriteRenderer, BoxCollider2D, DraggableObject2D and InteractableObject2D.");
     }
 }
 

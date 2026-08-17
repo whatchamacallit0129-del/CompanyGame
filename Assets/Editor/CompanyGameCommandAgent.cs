@@ -82,12 +82,18 @@ public static class CompanyGameCommandAgent
         GameObject interactable =
             new GameObject("InteractableObject");
 
-        interactable.AddComponent<SpriteRenderer>();
+        SpriteRenderer spriteRenderer = interactable.AddComponent<SpriteRenderer>();
+        spriteRenderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("Sprites/Default.sprite");
+        spriteRenderer.color = Color.white;
 
         BoxCollider2D collider =
             interactable.AddComponent<BoxCollider2D>();
 
         collider.size = Vector2.one;
+
+        // Reuse the existing selection behavior and add direct click interaction.
+        interactable.AddComponent<DraggableObject2D>();
+        interactable.AddComponent<InteractableObject2D>();
 
         Undo.RegisterCreatedObjectUndo(
             interactable,
@@ -99,7 +105,7 @@ public static class CompanyGameCommandAgent
         EditorUtility.SetDirty(interactable);
 
         Debug.Log(
-            "[Company Game] InteractableObject created automatically."
+            "[Company Game] InteractableObject created automatically with click interaction."
         );
     }
 
