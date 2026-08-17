@@ -20,6 +20,6 @@ echo.
 echo 다음 확인까지 10분 대기합니다...
 echo.
 
-timeout /t 180 /nobreak >nul
+timeout /t 600 /nobreak >nul
 
 goto LOOP
