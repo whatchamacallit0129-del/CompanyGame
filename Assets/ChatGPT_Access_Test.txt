@@ -1,3 +1,0 @@
-ChatGPT GitHub access test.
-Created to verify that ChatGPT can write files to the CompanyGame repository.
-If you can see this file in Unity after pulling the latest changes, the GitHub write path is working.
