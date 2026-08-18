@@ -38,7 +38,7 @@ public static class CompanyGameHierarchySorter
         try
         {
             Transform[] all = Resources.FindObjectsOfTypeAll<Transform>();
-            Dictionary<int, List<Transform>> groups = new Dictionary<int, List<Transform>>();
+            List<HierarchyGroup> groups = new List<HierarchyGroup>();
 
             foreach (Transform current in all)
             {
@@ -53,32 +53,38 @@ public static class CompanyGameHierarchySorter
                 if (!match.Success)
                     continue;
 
-                // Transform.parent can legitimately be null for a root object.
-                // Use the instance ID as a stable, non-null grouping key.
-                int parentId = current.parent != null ? current.parent.GetInstanceID() : 0;
+                Transform parent = current.parent;
+                HierarchyGroup group = null;
 
-                List<Transform> list;
-                if (!groups.TryGetValue(parentId, out list))
+                // Never use a null Transform as a Dictionary key. Root objects
+                // (parent == null) are placed into their own root group.
+                foreach (HierarchyGroup candidate in groups)
                 {
-                    list = new List<Transform>();
-                    groups.Add(parentId, list);
+                    if (candidate.Parent == parent)
+                    {
+                        group = candidate;
+                        break;
+                    }
                 }
 
-                list.Add(current);
+                if (group == null)
+                {
+                    group = new HierarchyGroup(parent);
+                    groups.Add(group);
+                }
+
+                group.Items.Add(current);
             }
 
-            foreach (KeyValuePair<int, List<Transform>> pair in groups)
+            foreach (HierarchyGroup group in groups)
             {
-                List<Transform> list = pair.Value;
-                if (list == null || list.Count < 2)
+                if (group == null || group.Items == null || group.Items.Count < 2)
                     continue;
 
-                list.Sort(CompareTransforms);
+                group.Items.Sort(CompareTransforms);
 
-                // All objects in a group share the same parent. Rebuild their
-                // sibling order directly from the sorted list.
                 int firstIndex = int.MaxValue;
-                foreach (Transform item in list)
+                foreach (Transform item in group.Items)
                 {
                     if (item == null)
                         continue;
@@ -89,13 +95,17 @@ public static class CompanyGameHierarchySorter
                 if (firstIndex == int.MaxValue)
                     continue;
 
-                for (int i = 0; i < list.Count; i++)
+                for (int i = 0; i < group.Items.Count; i++)
                 {
-                    Transform item = list[i];
+                    Transform item = group.Items[i];
                     if (item == null)
                         continue;
 
-                    int targetIndex = Math.Min(firstIndex + i, item.parent != null ? item.parent.childCount - 1 : int.MaxValue);
+                    int maxIndex = group.Parent != null
+                        ? group.Parent.childCount - 1
+                        : item.rootCount - 1;
+
+                    int targetIndex = Math.Min(firstIndex + i, Math.Max(0, maxIndex));
                     item.SetSiblingIndex(targetIndex);
                 }
             }
@@ -107,6 +117,17 @@ public static class CompanyGameHierarchySorter
         finally
         {
             sorting = false;
+        }
+    }
+
+    private sealed class HierarchyGroup
+    {
+        public readonly Transform Parent;
+        public readonly List<Transform> Items = new List<Transform>();
+
+        public HierarchyGroup(Transform parent)
+        {
+            Parent = parent;
         }
     }
 
