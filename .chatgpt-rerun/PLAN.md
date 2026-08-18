@@ -16,10 +16,17 @@ Build the Unity 2D company-management game with soft-coded, extensible corridor/
 - Unity Input System.
 
 ## Current implementation
-- Selection controller already supports single selection, drag selection, and right-click movement commands.
-- EmployeeMovement already requests paths from the navigation graph/service and follows returned nodes.
+- Selection controller exists in `Assets/Scripts/Movement/CompanyGameEmployeeSelectionController.cs` and uses Unity Input System mouse input.
+- Selection controller supports single selection, drag selection, and right-click movement commands.
+- EmployeeMovement requests paths from the navigation graph/service and follows returned nodes.
 - Navigation graph/service are independent of corridor-specific types.
-- Added `CompanyGameEmployeeMovementBootstrap` so every runtime `EmployeeId` automatically receives the reusable movement component.
+- `CompanyGameEmployeeMovementBootstrap` automatically attaches the reusable movement component to runtime `EmployeeId` objects.
+
+## Reconciliation findings
+- The required movement/selection/pathfinding source files are present on `main`.
+- The selection controller was verified to call `CompanyGameEmployeeMovement.MoveTo()` for selected employees.
+- The movement component was verified to consume `CompanyGameNavigationService` and safely stop/log when no route exists.
+- Runtime verification cannot be performed through the connected GitHub interface; Unity Play Mode is required for the remaining acceptance criteria.
 
 ## Acceptance
 1. No employee-specific hard-coded movement logic.
@@ -29,4 +36,4 @@ Build the Unity 2D company-management game with soft-coded, extensible corridor/
 5. Design remains extensible for multiple employees, floors, and future rules.
 
 ## Verification
-Unity compile and Play Mode verification are still required. Confirm that employees receive `CompanyGameEmployeeMovement`, selection works, a reachable right-click destination produces movement, and an unreachable destination logs a safe diagnostic. Preserve evidence in STATE/STATUS before completion.
+Source-level reconciliation is complete. Remaining verification must be performed in Unity: compile, enter Play Mode, select one employee, right-click a reachable connected corridor/node destination, verify movement, then test an unreachable destination and capture the Unity Console diagnostic. Do not mark complete from source inspection alone.
