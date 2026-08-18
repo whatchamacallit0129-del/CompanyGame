@@ -1,9 +1,9 @@
 # Rerun State
 
 - run_id: rerun-20260819-companygame-8f2c1d7a
-- sequence: 0
-- task_id: employee-movement-foundation
-- status: continue
-- checkpoint: Resumed the active sequence after re-reading the Rerun contract and reconciling control/STATE/PLAN. Previously verified source work remains unchanged and is not being repeated.
-- verification: GitHub source inspection remains complete for CompanyGameEmployeeSelectionController, CompanyGameEmployeeMovement, CompanyGameEmployeeMovementBootstrap, CompanyGameNavigationGraph, and CompanyGameNavigationService. Runtime Play Mode behavior is still unverified because the connected GitHub interface cannot run Unity or observe the Unity Console/Scene.
-- next_exact_action: In Unity, compile and enter Play Mode. Select one employee with left click, right-click a reachable connected corridor/node destination, verify the employee follows the node path and stops at the destination. Then right-click an unreachable destination and capture the Unity Console diagnostic. Report the observed result before further source changes.
+- sequence: 1
+- task_id: architecture-audit
+- status: needs_user
+- checkpoint: Safety-first workflow prepared. A backup snapshot of the previous sequence-0 Rerun contract/state was created before changing the active plan. Verified movement/navigation source work is preserved and will not be repeated.
+- verification: Source-level movement, selection, navigation graph/service, and movement bootstrap were already verified before this sequence. No gameplay code was changed in the safety transition.
+- next_exact_action: After the user authorizes the audit task, inspect the current Unity project structure and relevant source, map responsibilities/dependencies/data flow, identify risky coupling and automation boundaries, and write an architecture audit without changing gameplay code.
