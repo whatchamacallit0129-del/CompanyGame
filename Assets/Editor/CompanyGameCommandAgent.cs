@@ -30,7 +30,9 @@ public static class CompanyGameCommandAgent
             { "SET_ROTATION", SetRotation },
             { "SET_PARENT", SetParent },
             { "ADD_COMPONENT", AddComponent },
-            { "REMOVE_COMPONENT", RemoveComponent }
+            { "REMOVE_COMPONENT", RemoveComponent },
+            { "SET_COMPONENT_ACTIVE", SetComponentActive },
+            { "SET_COMPONENT_PROPERTY", SetComponentProperty }
         };
 
     [InitializeOnLoadMethod]
@@ -88,7 +90,6 @@ public static class CompanyGameCommandAgent
             }
 
             WriteResult(projectPath, id, raw, result);
-
             File.WriteAllText(processedPath, id);
             SafeDelete(commandPath);
             AssetDatabase.Refresh();
@@ -221,8 +222,6 @@ public static class CompanyGameCommandAgent
         return matches;
     }
 
-    // Delete numbered objects from the highest number downward.
-    // Example: Employee (1) ~ Employee (15), count 7 => 15,14,13,12,11,10,9.
     private static int CompareNames(string a, string b, string prefix)
     {
         if (a.Equals(prefix, StringComparison.Ordinal)) return 1;
@@ -332,6 +331,108 @@ public static class CompanyGameCommandAgent
         Type type = FindComponentType(v[1]); if (!ValidComponent(type)) return CommandResult.Failure("Component type not found: " + v[1]);
         Component component = go.GetComponent(type); if (component == null) return CommandResult.Failure("Component not found: " + v[1]);
         Undo.DestroyObjectImmediate(component); return CommandResult.SuccessResult("Removed component: " + v[1]);
+    }
+
+    private static CommandResult SetComponentActive(CommandRequest r)
+    {
+        string[] v;
+        if (!Args(r.Arguments, 3, out v)) return CommandResult.Failure("SET_COMPONENT_ACTIVE requires object:component:true|false.");
+        bool active;
+        if (!bool.TryParse(v[2], out active)) return CommandResult.Failure("Component active value must be true or false.");
+        GameObject go = FindObject(v[0]);
+        if (go == null) return CommandResult.Failure("Object not found: " + v[0]);
+        Type type = FindComponentType(v[1]);
+        if (!ValidComponent(type)) return CommandResult.Failure("Component type not found: " + v[1]);
+        Component component = go.GetComponent(type);
+        if (component == null) return CommandResult.Failure("Component not found on object: " + v[1]);
+        PropertyInfo enabledProperty = type.GetProperty("enabled", BindingFlags.Instance | BindingFlags.Public);
+        if (enabledProperty == null || !enabledProperty.CanWrite || enabledProperty.PropertyType != typeof(bool))
+            return CommandResult.Failure("Component does not expose an enabled property: " + v[1]);
+        Undo.RecordObject(component, "Set Component Enabled");
+        enabledProperty.SetValue(component, active, null);
+        EditorUtility.SetDirty(component);
+        return CommandResult.SuccessResult("Set component enabled: " + go.name + " / " + type.Name + " = " + active);
+    }
+
+    private static CommandResult SetComponentProperty(CommandRequest r)
+    {
+        string[] v = r.Arguments.Split(new[] { ':' }, 4);
+        if (v.Length != 4) return CommandResult.Failure("SET_COMPONENT_PROPERTY requires object:component:property:value.");
+        GameObject go = FindObject(v[0].Trim());
+        if (go == null) return CommandResult.Failure("Object not found: " + v[0]);
+        Type type = FindComponentType(v[1].Trim());
+        if (!ValidComponent(type)) return CommandResult.Failure("Component type not found: " + v[1]);
+        Component component = go.GetComponent(type);
+        if (component == null) return CommandResult.Failure("Component not found on object: " + v[1]);
+
+        SerializedObject serializedObject = new SerializedObject(component);
+        SerializedProperty property = serializedObject.FindProperty(v[2].Trim());
+        if (property == null) return CommandResult.Failure("Serialized property not found: " + v[1] + "." + v[2]);
+
+        Undo.RecordObject(component, "Set Component Property");
+        string error;
+        if (!TrySetSerializedProperty(property, v[3].Trim(), out error)) return CommandResult.Failure(error);
+        serializedObject.ApplyModifiedProperties();
+        EditorUtility.SetDirty(component);
+        return CommandResult.SuccessResult("Set component property: " + go.name + " / " + type.Name + "." + v[2].Trim());
+    }
+
+    private static bool TrySetSerializedProperty(SerializedProperty property, string valueText, out string error)
+    {
+        error = null;
+        switch (property.propertyType)
+        {
+            case SerializedPropertyType.Integer:
+                int i; if (!int.TryParse(valueText, NumberStyles.Integer, CultureInfo.InvariantCulture, out i)) { error = "Invalid integer: " + valueText; return false; } property.intValue = i; return true;
+            case SerializedPropertyType.Boolean:
+                bool b; if (!bool.TryParse(valueText, out b)) { error = "Invalid boolean: " + valueText; return false; } property.boolValue = b; return true;
+            case SerializedPropertyType.Float:
+                float f; if (!TryFloat(valueText, out f)) { error = "Invalid float: " + valueText; return false; } property.floatValue = f; return true;
+            case SerializedPropertyType.String:
+                property.stringValue = valueText; return true;
+            case SerializedPropertyType.Enum:
+                for (int n = 0; n < property.enumNames.Length; n++)
+                    if (property.enumNames[n].Equals(valueText, StringComparison.OrdinalIgnoreCase) || property.enumDisplayNames[n].Equals(valueText, StringComparison.OrdinalIgnoreCase)) { property.enumValueIndex = n; return true; }
+                int enumIndex; if (int.TryParse(valueText, out enumIndex) && enumIndex >= 0 && enumIndex < property.enumNames.Length) { property.enumValueIndex = enumIndex; return true; }
+                error = "Enum value not found: " + valueText; return false;
+            case SerializedPropertyType.Vector2:
+                Vector2 v2; if (!TryParseVector2(valueText, out v2)) { error = "Vector2 requires x,y: " + valueText; return false; } property.vector2Value = v2; return true;
+            case SerializedPropertyType.Vector3:
+                Vector3 v3; if (!TryParseVector3(valueText, out v3)) { error = "Vector3 requires x,y,z: " + valueText; return false; } property.vector3Value = v3; return true;
+            case SerializedPropertyType.Vector4:
+                Vector4 v4; if (!TryParseVector4(valueText, out v4)) { error = "Vector4 requires x,y,z,w: " + valueText; return false; } property.vector4Value = v4; return true;
+            case SerializedPropertyType.Color:
+                Color color; if (!TryParseColor(valueText, out color)) { error = "Color requires r,g,b or r,g,b,a: " + valueText; return false; } property.colorValue = color; return true;
+            default:
+                error = "Unsupported serialized property type: " + property.propertyType;
+                return false;
+        }
+    }
+
+    private static bool TryParseVector2(string text, out Vector2 value)
+    {
+        float[] n; if (!TryParseNumbers(text, 2, out n)) { value = Vector2.zero; return false; } value = new Vector2(n[0], n[1]); return true;
+    }
+    private static bool TryParseVector3(string text, out Vector3 value)
+    {
+        float[] n; if (!TryParseNumbers(text, 3, out n)) { value = Vector3.zero; return false; } value = new Vector3(n[0], n[1], n[2]); return true;
+    }
+    private static bool TryParseVector4(string text, out Vector4 value)
+    {
+        float[] n; if (!TryParseNumbers(text, 4, out n)) { value = Vector4.zero; return false; } value = new Vector4(n[0], n[1], n[2], n[3]); return true;
+    }
+    private static bool TryParseColor(string text, out Color value)
+    {
+        float[] n;
+        if (!TryParseNumbers(text, 3, out n) && !TryParseNumbers(text, 4, out n)) { value = Color.white; return false; }
+        value = n.Length == 3 ? new Color(n[0], n[1], n[2], 1f) : new Color(n[0], n[1], n[2], n[3]); return true;
+    }
+    private static bool TryParseNumbers(string text, int count, out float[] values)
+    {
+        string[] parts = text.Split(','); values = null; if (parts.Length != count) return false;
+        float[] result = new float[count];
+        for (int i = 0; i < count; i++) if (!TryFloat(parts[i].Trim(), out result[i])) return false;
+        values = result; return true;
     }
 
     private static GameObject FindObject(string name) { return string.IsNullOrWhiteSpace(name) ? null : GameObject.Find(name); }
