@@ -1,5 +1,22 @@
-const state = { running: false, sequence: 0, taskId: "", lastError: "" };
+const STORAGE_KEY = "companygame_rerun_state";
+const state = {
+  running: false,
+  sequence: 0,
+  taskId: "corridor-employee-movement",
+  status: "idle",
+  lastError: ""
+};
 const $ = id => document.getElementById(id);
+
+async function loadState() {
+  const saved = await chrome.storage.local.get(STORAGE_KEY);
+  if (saved[STORAGE_KEY]) Object.assign(state, saved[STORAGE_KEY]);
+  render();
+}
+
+async function saveState() {
+  await chrome.storage.local.set({ [STORAGE_KEY]: { ...state } });
+}
 
 function render() {
   $("status").textContent = state.running ? "Rerun 실행 중" : "Rerun 정지";
@@ -11,23 +28,33 @@ async function sendToChatGPT(prompt) {
     const result = await chrome.runtime.sendMessage({ type: "send_prompt", prompt });
     if (!result?.ok) throw new Error(result?.error || "메시지 전송 실패");
     state.lastError = "";
+    await saveState();
+    render();
     return result;
   } catch (error) {
     state.lastError = error?.message || String(error);
+    state.status = "error";
+    await saveState();
     render();
     throw error;
   }
 }
 
 $("start").onclick = async () => {
+  // Start = 새 작업 authorization. 이전 sequence를 이어가지 않는다.
   state.running = true;
-  state.sequence = 0;
+  state.sequence += 1;
   state.taskId = "corridor-employee-movement";
+  state.status = "continue";
+  state.lastError = "";
+  await saveState();
   render();
+
   try {
-    await sendToChatGPT(`CompanyGame Rerun 시작.
+    await sendToChatGPT(`START — CompanyGame Rerun 새 작업 authorization.
 
 현재 작업 범위는 게임적인 부분만이다.
+Task ID: corridor-employee-movement
 목표: 통로(Node)와 직원 이동 시스템을 완성한다.
 
 요구사항:
@@ -45,21 +72,33 @@ $("start").onclick = async () => {
 };
 
 $("resume").onclick = async () => {
+  // Continue = 같은 task/sequence의 work start 또는 resume authorization.
+  // Stop 후에도 sequence와 task를 유지한다.
   state.running = true;
-  state.sequence += 1;
+  state.status = "continue";
+  state.lastError = "";
+  await saveState();
   render();
+
   try {
-    await sendToChatGPT(`continue.
-현재 CompanyGame의 통로(Node) + 직원 이동 작업을 이어서 진행해.
-GitHub의 현재 코드와 result.json/error.json을 먼저 확인하고 검증된 작업은 반복하지 마.
-실제 직원이 Node Graph를 따라 목적지까지 이동하는 것이 최종 완료 조건이다.
-오류가 있으면 원인을 직접 확인하고 수정한 뒤 다시 검증해.`);
+    await sendToChatGPT(`CONTINUE — 현재 CompanyGame Rerun 작업 authorization을 다시 시작한다.
+
+같은 Task ID(${state.taskId}), sequence(${state.sequence})를 유지한다.
+현재 GitHub의 상태와 result.json/error.json을 먼저 확인하고 현재 sequence의 미완료 지점부터 이어서 진행해.
+검증된 작업은 반복하지 마.
+
+최종 완료 조건은 실제 직원이 연결된 Node Graph를 따라 목적지까지 이동하는 것의 검증이다.
+오류가 있으면 원인을 직접 확인하고 수정한 뒤 다시 검증한다.
+모든 acceptance criteria가 실제로 충족되면 COMPLETE라고 명확하게 보고한다.`);
   } catch (_) {}
 };
 
-$("stop").onclick = () => {
+$("stop").onclick = async () => {
+  // Stop = watcher/작업 authorization 중지. task/sequence는 보존한다.
   state.running = false;
+  state.status = "stopped";
+  await saveState();
   render();
 };
 
-render();
+loadState();
