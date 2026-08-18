@@ -87,6 +87,13 @@ public static class CompanyGameCommandAgent
         public CommandRequest(string name, string arguments) { Name = name; Arguments = arguments; }
     }
 
+    [Serializable]
+    private sealed class CommandEnvelope
+    {
+        public string content;
+        public string encoding;
+    }
+
     private sealed class CommandResult
     {
         public bool Success; public string Message; public string Exception;
@@ -109,6 +116,18 @@ public static class CompanyGameCommandAgent
 
     private static CommandRequest ParseCommand(string raw)
     {
+        raw = (raw ?? string.Empty).Trim().TrimStart('\uFEFF');
+
+        // command.json is normally a JSON envelope. Accept both the envelope
+        // and a plain-text command so the agent remains backward compatible.
+        if (raw.StartsWith("{"))
+        {
+            CommandEnvelope envelope = JsonUtility.FromJson<CommandEnvelope>(raw);
+            if (envelope == null || string.IsNullOrWhiteSpace(envelope.content))
+                throw new InvalidOperationException("command.json JSON envelope is missing 'content'.");
+            raw = envelope.content.Trim().TrimStart('\uFEFF');
+        }
+
         string[] parts = raw.Split(new[] { ':' }, 2);
         return new CommandRequest(parts[0].Trim().ToUpperInvariant(), parts.Length > 1 ? parts[1].Trim() : "");
     }
