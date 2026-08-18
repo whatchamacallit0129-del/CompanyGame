@@ -10,6 +10,8 @@ public sealed class CompanyGameEmployeeMovementSettings : ScriptableObject
 {
     [Header("Speed")]
     [Min(0.01f)] [SerializeField] private float moveSpeed = 2f;
+    [Min(0.01f)] [SerializeField] private float acceleration = 8f;
+    [Min(0.01f)] [SerializeField] private float deceleration = 12f;
 
     [Header("Path Following")]
     [Min(0.001f)] [SerializeField] private float nodeArrivalDistance = 0.06f;
@@ -23,6 +25,8 @@ public sealed class CompanyGameEmployeeMovementSettings : ScriptableObject
     [Min(0.01f)] [SerializeField] private float nodeSnapDistance = 2.5f;
 
     public float MoveSpeed => Mathf.Max(0.01f, moveSpeed);
+    public float Acceleration => Mathf.Max(0.01f, acceleration);
+    public float Deceleration => Mathf.Max(0.01f, deceleration);
     public float NodeArrivalDistance => Mathf.Max(0.001f, nodeArrivalDistance);
     public float DestinationArrivalDistance => Mathf.Max(0.001f, destinationArrivalDistance);
     public bool UseUnscaledTime => useUnscaledTime;
