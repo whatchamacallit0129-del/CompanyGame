@@ -1,7 +1,9 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 
 cd /d D:\CompanyProject
+
+title CompanyProject Auto Pull Loop
 
 echo ========================================
 echo CompanyProject Auto Pull Loop
@@ -13,38 +15,19 @@ echo.
 
 :LOOP
 
-echo [%date% %time%] GitHub 확인 중...
+echo [%date% %time%] GitHub check...
 
-D:\Git\cmd\git.exe fetch origin
+call D:\CompanyProject\auto_pull.bat
+set PULL_RESULT=%ERRORLEVEL%
 
-if errorlevel 1 (
-    echo [ERROR] GitHub 확인 실패
-    echo 5초 후 재시도합니다.
-    timeout /t 5 /nobreak >nul
-    goto LOOP
-)
-
-for /f "delims=" %%A in ('D:\Git\cmd\git.exe rev-parse HEAD') do set LOCAL=%%A
-for /f "delims=" %%A in ('D:\Git\cmd\git.exe rev-parse origin/main') do set REMOTE=%%A
-
-if "%LOCAL%"=="%REMOTE%" (
-    echo [OK] 변경사항 없음
+if "%PULL_RESULT%"=="0" (
+    echo [OK] Sync check completed.
+) else if "%PULL_RESULT%"=="2" (
+    echo [CONFLICT] Local and GitHub histories have conflicts.
+    echo [WAIT] Automatic pull will retry after 5 seconds.
 ) else (
-    echo [UPDATE] GitHub에 새 변경사항 발견!
-    echo [UPDATE] Pull 시작...
-
-    D:\Git\cmd\git.exe pull --ff-only origin main
-
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] 자동 Pull 실패
-        echo 로컬 변경사항 또는 Git 충돌을 확인해야 합니다.
-        echo 자동 Pull을 중단합니다.
-        pause
-        exit /b 1
-    )
-
-    echo [SUCCESS] Pull 완료
+    echo [WARN] Auto Pull returned code %PULL_RESULT%.
+    echo [WAIT] Retrying after 5 seconds.
 )
 
 echo.
