@@ -11,13 +11,14 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
     public string ObjectId => objectId;
     public string ObjectType => objectType;
 
-    // Intentionally no Reset/OnEnable auto-generation.
-    // The Command Agent assigns the correct category and permanent ID explicitly after adding this component.
+    // IDs are assigned explicitly by Command Agent after creation.
+    // No Unity lifecycle callback generates IDs during object construction.
     public void EnsureId(string type) => EnsureIdentity(type);
 
     public void EnsureIdentity(string type)
     {
         string normalized = NormalizeType(type);
+
         if (!string.IsNullOrEmpty(objectId))
         {
             if (string.IsNullOrEmpty(objectType)) objectType = normalized;
@@ -37,17 +38,13 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
 
     private static string GenerateId(string type)
     {
+        // Do not scan the scene while an object is being constructed.
+        // A persistent EditorPrefs counter is sufficient because IDs are never reused.
         string prefix = GetPrefix(type);
         string key = "CompanyGame.Identity.Next." + type.ToUpperInvariant();
         int next = Math.Max(1, EditorPrefs.GetInt(key, 1));
-        string id;
-        do
-        {
-            id = prefix + "-" + next.ToString("D6");
-            next++;
-        }
-        while (IdExists(id));
-        EditorPrefs.SetInt(key, next);
+        string id = prefix + "-" + next.ToString("D6");
+        EditorPrefs.SetInt(key, next + 1);
         return id;
     }
 
@@ -59,18 +56,4 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
         if (type.Equals("Machine", StringComparison.OrdinalIgnoreCase)) return "MACH";
         return "OBJ";
     }
-
-#if UNITY_EDITOR
-    private static bool IdExists(string id)
-    {
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        foreach (GameObject go in objects)
-        {
-            if (go == null) continue;
-            CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
-            if (identity != null && identity.objectId == id) return true;
-        }
-        return false;
-    }
-#endif
 }
