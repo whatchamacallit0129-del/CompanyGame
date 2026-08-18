@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
@@ -71,9 +72,9 @@ public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
                           "  \"test\": \"employee-node-movement\",\n" +
                           "  \"timestamp\": \"" + Escape(DateTime.Now.ToString("o")) + "\",\n" +
                           "  \"message\": \"" + Escape(message) + "\",\n" +
-                          "  \"nodeCount\": " + startNodeCount + ",\n" +
-                          "  \"pathNodeCount\": " + pathNodeCount + ",\n" +
-                          "  \"destination\": { \"x\": " + destination.x.ToString("F4") + ", \"y\": " + destination.y.ToString("F4") + ", \"z\": " + destination.z.ToString("F4") + " }\n" +
+                          "  \"nodeCount\": " + startNodeCount.ToString(CultureInfo.InvariantCulture) + ",\n" +
+                          "  \"pathNodeCount\": " + pathNodeCount.ToString(CultureInfo.InvariantCulture) + ",\n" +
+                          "  \"destination\": { \"x\": " + destination.x.ToString("F4", CultureInfo.InvariantCulture) + ", \"y\": " + destination.y.ToString("F4", CultureInfo.InvariantCulture) + ", \"z\": " + destination.z.ToString("F4", CultureInfo.InvariantCulture) + " }\n" +
                           "}\n";
 
             string temp = path + ".tmp";
