@@ -11,6 +11,10 @@ public static class CompanyGameCommandAgent
     private const string CommandFileName = "command.json";
     private const string ResultFileName = "result.json";
 
+    private static bool commandRunning;
+    private static string activeCommand;
+    private static readonly List<LogRecord> commandErrors = new List<LogRecord>();
+
     private static readonly Dictionary<string, Func<CommandRequest, CommandResult>> CommandHandlers =
         new Dictionary<string, Func<CommandRequest, CommandResult>>(StringComparer.OrdinalIgnoreCase)
         {
@@ -33,11 +37,22 @@ public static class CompanyGameCommandAgent
     {
         EditorApplication.update -= CheckCommand;
         EditorApplication.update += CheckCommand;
+        Application.logMessageReceived -= CaptureLog;
+        Application.logMessageReceived += CaptureLog;
         Debug.Log("[Company Game] Command Agent started.");
+    }
+
+    private static void CaptureLog(string condition, string stackTrace, LogType type)
+    {
+        if (!commandRunning) return;
+        if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+        commandErrors.Add(new LogRecord(type.ToString(), condition, stackTrace));
     }
 
     private static void CheckCommand()
     {
+        if (commandRunning) return;
+
         string projectPath = Directory.GetParent(Application.dataPath).FullName;
         string commandPath = Path.Combine(projectPath, CommandFileName);
         if (!File.Exists(commandPath)) return;
@@ -47,23 +62,61 @@ public static class CompanyGameCommandAgent
             string rawCommand = File.ReadAllText(commandPath).Trim();
             if (string.IsNullOrWhiteSpace(rawCommand)) return;
 
+            commandRunning = true;
+            activeCommand = rawCommand;
+            commandErrors.Clear();
+
             CommandRequest request = ParseCommand(rawCommand);
             CommandResult result = ExecuteCommand(request);
-            WriteResult(projectPath, result);
 
-            if (result.Success)
+            // Give Unity one update cycle to deliver synchronous log callbacks.
+            EditorApplication.delayCall += () =>
             {
-                File.Delete(commandPath);
-                AssetDatabase.Refresh();
-            }
-
-            Debug.Log("[Company Game] " + result.Message);
+                try
+                {
+                    FinalizeCommand(projectPath, commandPath, result);
+                }
+                finally
+                {
+                    commandRunning = false;
+                    activeCommand = null;
+                    commandErrors.Clear();
+                }
+            };
         }
         catch (Exception exception)
         {
+            commandRunning = false;
             CommandResult result = CommandResult.Failure("Command execution failed: " + exception.Message);
-            WriteResult(projectPath, result);
+            result.Exception = exception.ToString();
+            WriteResult(projectPath, activeCommand ?? string.Empty, result);
             Debug.LogError("[Company Game] " + exception);
+        }
+    }
+
+    private static void FinalizeCommand(string projectPath, string commandPath, CommandResult result)
+    {
+        result.Errors.AddRange(commandErrors);
+
+        if (result.Errors.Count > 0)
+        {
+            result.Success = false;
+            if (string.IsNullOrWhiteSpace(result.Message))
+                result.Message = "Unity reported errors while executing the command.";
+        }
+
+        WriteResult(projectPath, activeCommand ?? string.Empty, result);
+
+        if (result.Success)
+        {
+            File.Delete(commandPath);
+            AssetDatabase.Refresh();
+            Debug.Log("[Company Game] SUCCESS: " + result.Message);
+        }
+        else
+        {
+            Debug.LogError("[Company Game] FAILED: " + result.Message);
+            // Keep command.json on failure so the automation loop can inspect and retry/fix it.
         }
     }
 
@@ -100,9 +153,11 @@ public static class CompanyGameCommandAgent
 
     private sealed class CommandResult
     {
-        public bool Success { get; }
-        public string Message { get; }
+        public bool Success { get; set; }
+        public string Message { get; set; }
+        public string Exception { get; set; }
         public List<string> CreatedObjects { get; } = new List<string>();
+        public List<LogRecord> Errors { get; } = new List<LogRecord>();
 
         private CommandResult(bool success, string message)
         {
@@ -110,20 +165,26 @@ public static class CompanyGameCommandAgent
             Message = message;
         }
 
-        public static CommandResult SuccessResult(string message)
-        {
-            return new CommandResult(true, message);
-        }
+        public static CommandResult SuccessResult(string message) => new CommandResult(true, message);
+        public static CommandResult Failure(string message) => new CommandResult(false, message);
+    }
 
-        public static CommandResult Failure(string message)
+    private sealed class LogRecord
+    {
+        public string Type { get; }
+        public string Message { get; }
+        public string StackTrace { get; }
+
+        public LogRecord(string type, string message, string stackTrace)
         {
-            return new CommandResult(false, message);
+            Type = type;
+            Message = message;
+            StackTrace = stackTrace;
         }
     }
 
     // CREATE_INTERACTABLE_OBJECT:name[:count]
-    // count means "add this many".
-    // Example: :3 then :7 => 10 total, assuming the first three still exist.
+    // count means "add this many" and numbering continues from existing objects.
     private static CommandResult CreateInteractableObject(CommandRequest request)
     {
         string[] values = request.Arguments.Split(':');
@@ -181,15 +242,11 @@ public static class CompanyGameCommandAgent
     private static int GetNextNumberedIndex(string baseName)
     {
         int index = 1;
-        while (GameObject.Find(baseName + " (" + index + ")") != null)
-            index++;
+        while (GameObject.Find(baseName + " (" + index + ")") != null) index++;
         return index;
     }
 
-    private static string GetNextNumberedName(string baseName)
-    {
-        return baseName + " (" + GetNextNumberedIndex(baseName) + ")";
-    }
+    private static string GetNextNumberedName(string baseName) => baseName + " (" + GetNextNumberedIndex(baseName) + ")";
 
     private static CommandResult CreateEmptyObject(CommandRequest request)
     {
@@ -212,8 +269,7 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult RenameObject(CommandRequest request)
     {
-        if (!TryGetArguments(request.Arguments, 2, out string[] values))
-            return CommandResult.Failure("RENAME_OBJECT requires objectName:newName.");
+        if (!TryGetArguments(request.Arguments, 2, out string[] values)) return CommandResult.Failure("RENAME_OBJECT requires objectName:newName.");
         GameObject target = FindObject(values[0]);
         if (target == null) return CommandResult.Failure("Object not found: " + values[0]);
         Undo.RecordObject(target, "Rename Object");
@@ -224,8 +280,7 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult SetActive(CommandRequest request)
     {
-        if (!TryGetArguments(request.Arguments, 2, out string[] values) || !bool.TryParse(values[1], out bool active))
-            return CommandResult.Failure("SET_ACTIVE requires objectName:true|false.");
+        if (!TryGetArguments(request.Arguments, 2, out string[] values) || !bool.TryParse(values[1], out bool active)) return CommandResult.Failure("SET_ACTIVE requires objectName:true|false.");
         GameObject target = FindObject(values[0]);
         if (target == null) return CommandResult.Failure("Object not found: " + values[0]);
         Undo.RecordObject(target, "Set Active State");
@@ -240,8 +295,7 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult SetTransformVector(CommandRequest request, string undoName, Action<Transform, Vector3> apply)
     {
-        if (!TryGetVectorArguments(request.Arguments, out GameObject target, out Vector3 value))
-            return CommandResult.Failure("Transform command requires objectName:x:y:z.");
+        if (!TryGetVectorArguments(request.Arguments, out GameObject target, out Vector3 value)) return CommandResult.Failure("Transform command requires objectName:x:y:z.");
         Undo.RecordObject(target.transform, undoName);
         apply(target.transform, value);
         EditorUtility.SetDirty(target);
@@ -250,8 +304,7 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult SetParent(CommandRequest request)
     {
-        if (!TryGetArguments(request.Arguments, 2, out string[] values))
-            return CommandResult.Failure("SET_PARENT requires child:parent or child:NONE.");
+        if (!TryGetArguments(request.Arguments, 2, out string[] values)) return CommandResult.Failure("SET_PARENT requires child:parent or child:NONE.");
         GameObject child = FindObject(values[0]);
         if (child == null) return CommandResult.Failure("Object not found: " + values[0]);
         GameObject parent = null;
@@ -266,14 +319,12 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult AddComponent(CommandRequest request)
     {
-        if (!TryGetArguments(request.Arguments, 2, out string[] values))
-            return CommandResult.Failure("ADD_COMPONENT requires objectName:componentType.");
+        if (!TryGetArguments(request.Arguments, 2, out string[] values)) return CommandResult.Failure("ADD_COMPONENT requires objectName:componentType.");
         GameObject target = FindObject(values[0]);
         if (target == null) return CommandResult.Failure("Object not found: " + values[0]);
         Type componentType = FindComponentType(values[1]);
         if (!IsValidComponentType(componentType)) return CommandResult.Failure("Component type not found: " + values[1]);
-        if (target.GetComponent(componentType) != null)
-            return CommandResult.SuccessResult("Component already exists: " + values[1]);
+        if (target.GetComponent(componentType) != null) return CommandResult.SuccessResult("Component already exists: " + values[1]);
         Undo.AddComponent(target, componentType);
         EditorUtility.SetDirty(target);
         return CommandResult.SuccessResult("Added component: " + values[1]);
@@ -281,8 +332,7 @@ public static class CompanyGameCommandAgent
 
     private static CommandResult RemoveComponent(CommandRequest request)
     {
-        if (!TryGetArguments(request.Arguments, 2, out string[] values))
-            return CommandResult.Failure("REMOVE_COMPONENT requires objectName:componentType.");
+        if (!TryGetArguments(request.Arguments, 2, out string[] values)) return CommandResult.Failure("REMOVE_COMPONENT requires objectName:componentType.");
         GameObject target = FindObject(values[0]);
         if (target == null) return CommandResult.Failure("Object not found: " + values[0]);
         Type componentType = FindComponentType(values[1]);
@@ -293,11 +343,7 @@ public static class CompanyGameCommandAgent
         return CommandResult.SuccessResult("Removed component: " + values[1]);
     }
 
-    private static GameObject FindObject(string objectName)
-    {
-        if (string.IsNullOrWhiteSpace(objectName)) return null;
-        return GameObject.Find(objectName);
-    }
+    private static GameObject FindObject(string objectName) => string.IsNullOrWhiteSpace(objectName) ? null : GameObject.Find(objectName);
 
     private static Type FindComponentType(string typeName)
     {
@@ -330,11 +376,7 @@ public static class CompanyGameCommandAgent
     private static bool TryGetArguments(string arguments, int expectedCount, out string[] values)
     {
         values = arguments.Split(':');
-        if (values.Length != expectedCount)
-        {
-            values = null;
-            return false;
-        }
+        if (values.Length != expectedCount) { values = null; return false; }
         for (int i = 0; i < values.Length; i++) values[i] = values[i].Trim();
         return true;
     }
@@ -343,29 +385,26 @@ public static class CompanyGameCommandAgent
     {
         target = null;
         value = Vector3.zero;
-        if (!TryGetArguments(arguments, 4, out string[] values) ||
-            !TryParseFloat(values[1], out float x) ||
-            !TryParseFloat(values[2], out float y) ||
-            !TryParseFloat(values[3], out float z)) return false;
+        if (!TryGetArguments(arguments, 4, out string[] values) || !TryParseFloat(values[1], out float x) || !TryParseFloat(values[2], out float y) || !TryParseFloat(values[3], out float z)) return false;
         target = FindObject(values[0]);
         if (target == null) return false;
         value = new Vector3(x, y, z);
         return true;
     }
 
-    private static bool TryParseFloat(string value, out float result)
-    {
-        return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-    }
+    private static bool TryParseFloat(string value, out float result) => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
 
-    private static void WriteResult(string projectPath, CommandResult result)
+    private static void WriteResult(string projectPath, string command, CommandResult result)
     {
         string resultPath = Path.Combine(projectPath, ResultFileName);
-        string created = string.Join(",", result.CreatedObjects.ToArray());
         string json = "{\n" +
+                      "  \"command\": \"" + EscapeJson(command) + "\",\n" +
                       "  \"success\": " + result.Success.ToString().ToLowerInvariant() + ",\n" +
+                      "  \"status\": \"" + (result.Success ? "SUCCESS" : "FAILED") + "\",\n" +
                       "  \"message\": \"" + EscapeJson(result.Message) + "\",\n" +
-                      "  \"createdObjects\": [" + QuoteList(result.CreatedObjects) + "]\n" +
+                      "  \"exception\": \"" + EscapeJson(result.Exception) + "\",\n" +
+                      "  \"createdObjects\": [" + QuoteList(result.CreatedObjects) + "],\n" +
+                      "  \"errors\": [" + ErrorList(result.Errors) + "]\n" +
                       "}";
         File.WriteAllText(resultPath, json);
     }
@@ -375,6 +414,16 @@ public static class CompanyGameCommandAgent
         List<string> quoted = new List<string>();
         foreach (string value in values) quoted.Add("\"" + EscapeJson(value) + "\"");
         return string.Join(",", quoted.ToArray());
+    }
+
+    private static string ErrorList(List<LogRecord> errors)
+    {
+        List<string> items = new List<string>();
+        foreach (LogRecord error in errors)
+        {
+            items.Add("{\"type\":\"" + EscapeJson(error.Type) + "\",\"message\":\"" + EscapeJson(error.Message) + "\",\"stackTrace\":\"" + EscapeJson(error.StackTrace) + "\"}");
+        }
+        return string.Join(",", items.ToArray());
     }
 
     private static string EscapeJson(string value)
