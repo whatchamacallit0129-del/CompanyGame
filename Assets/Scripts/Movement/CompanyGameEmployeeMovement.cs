@@ -1,16 +1,18 @@
 using UnityEngine;
 
 /// <summary>
-/// Generic movement controller for employees and future agents.
-/// It consumes the pathfinding service and never edits the node graph itself.
+/// Movement agent for employees and future controllable actors.
+/// It knows how to move along a supplied navigation path, but knows nothing
+/// about corridors, doors or how the graph was authored.
 /// </summary>
 public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 {
+    [Header("Movement")]
     [SerializeField] private float moveSpeed = 2f;
     [SerializeField] private int floor;
     [SerializeField] private bool useUnscaledTime;
 
-    private CompanyGamePathfindingService pathfinding;
+    private CompanyGameNavigationService navigation;
     private CompanyGamePath currentPath;
     private Vector3 destination;
     private int pathIndex;
@@ -19,20 +21,20 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
     public bool IsMoving => moving;
     public Vector3 Destination => destination;
     public float MoveSpeed => Mathf.Max(0.01f, moveSpeed);
+    public int Floor => floor;
 
     private void Awake()
     {
-        pathfinding = new CompanyGamePathfindingService();
+        navigation = new CompanyGameNavigationService(CompanyGameNavigationGraph.Instance);
     }
 
     private void Update()
     {
-        if (!moving || currentPath == null || !currentPath.IsValid)
-            return;
+        if (!moving || currentPath == null || !currentPath.IsValid) return;
 
-        float delta = (useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime) * MoveSpeed;
+        float remaining = (useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime) * MoveSpeed;
 
-        while (delta > 0f && pathIndex < currentPath.Nodes.Count)
+        while (remaining > 0f && pathIndex < currentPath.Nodes.Count)
         {
             CompanyGamePathNode node = currentPath.Nodes[pathIndex];
             if (node == null)
@@ -42,10 +44,9 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
             }
 
             Vector3 target = node.transform.position;
-            Vector3 next = Vector3.MoveTowards(transform.position, target, delta);
-            float used = Vector3.Distance(transform.position, next);
+            Vector3 next = Vector3.MoveTowards(transform.position, target, remaining);
+            remaining -= Vector3.Distance(transform.position, next);
             transform.position = next;
-            delta -= used;
 
             if (Vector3.Distance(transform.position, target) <= 0.01f)
                 pathIndex++;
@@ -55,7 +56,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 
         if (pathIndex >= currentPath.Nodes.Count)
         {
-            transform.position = Vector3.MoveTowards(transform.position, destination, delta);
+            transform.position = Vector3.MoveTowards(transform.position, destination, remaining);
             if (Vector3.Distance(transform.position, destination) <= 0.01f)
             {
                 transform.position = destination;
@@ -67,21 +68,18 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 
     public bool MoveTo(Vector3 worldPosition)
     {
-        pathfinding.RefreshGraph();
-        CompanyGamePath path = pathfinding.FindPath(transform.position, worldPosition, floor);
-
+        CompanyGamePath path = navigation.FindPath(transform.position, worldPosition, floor);
         if (!path.IsValid)
         {
-            moving = false;
-            currentPath = null;
-            Debug.LogWarning($"[Company Game] No movement route found for {name}.", this);
+            StopMovement();
+            Debug.LogWarning($"[Company Game] No navigation route for {name}. Make sure the destination is on a reachable node network.", this);
             return false;
         }
 
         destination = worldPosition;
         currentPath = path;
-        pathIndex = path.Nodes.Count > 0 && path.Nodes[0] != null &&
-                     Vector3.Distance(transform.position, path.Nodes[0].transform.position) <= 0.01f
+        pathIndex = path.Nodes.Count > 0 &&
+                    Vector3.Distance(transform.position, path.Nodes[0].transform.position) <= 0.01f
             ? 1
             : 0;
         moving = true;
@@ -92,10 +90,8 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
     {
         moving = false;
         currentPath = null;
+        pathIndex = 0;
     }
 
-    public void SetFloor(int value)
-    {
-        floor = value;
-    }
+    public void SetFloor(int value) => floor = value;
 }
