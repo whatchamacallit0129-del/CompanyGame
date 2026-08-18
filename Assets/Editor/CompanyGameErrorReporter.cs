@@ -5,22 +5,51 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Captures Unity errors/exceptions and writes the latest diagnostic to
-/// results/error.json so the automated Git workflow can publish it.
+/// Captures Unity Editor errors and exceptions and writes them to results/error.json.
+/// Includes a menu command that verifies the reporter itself is alive.
 /// </summary>
 [InitializeOnLoad]
 public static class CompanyGameErrorReporter
 {
     private const string ResultsDirectory = "results";
     private const string ErrorFileName = "error.json";
+    private static bool initialized;
+    private static bool writing;
     private static string lastSignature = string.Empty;
     private static double lastWriteTime;
-    private static bool writing;
 
     static CompanyGameErrorReporter()
     {
+        Initialize();
+    }
+
+    [UnityEditor.Callbacks.DidReloadScripts]
+    private static void OnScriptsReloaded()
+    {
+        Initialize();
+    }
+
+    private static void Initialize()
+    {
+        if (initialized)
+            return;
+
+        initialized = true;
         Application.logMessageReceivedThreaded -= OnLogMessage;
         Application.logMessageReceivedThreaded += OnLogMessage;
+        Debug.Log("[Company Game] Error Reporter initialized.");
+    }
+
+    [MenuItem("Tools/Company Game/Test Error Reporter")]
+    private static void TestErrorReporter()
+    {
+        // Write a deterministic diagnostic before emitting the intentional error.
+        WriteError(
+            "CompanyGameErrorReporter test error. This error was intentionally generated to verify error capture.",
+            "Test Error Reporter menu command -> CompanyGameErrorReporter.TestErrorReporter()",
+            LogType.Error);
+
+        Debug.LogError("[Company Game] TEST ERROR: Error Reporter capture test.");
     }
 
     private static void OnLogMessage(string condition, string stackTrace, LogType type)
@@ -28,23 +57,17 @@ public static class CompanyGameErrorReporter
         if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert)
             return;
 
-        if (writing)
-            return;
-
         string safeCondition = condition ?? string.Empty;
         string safeStackTrace = stackTrace ?? string.Empty;
-        string signature = safeCondition + "\n" + safeStackTrace;
+        string signature = type + "\n" + safeCondition + "\n" + safeStackTrace;
         double now = EditorApplication.timeSinceStartup;
 
-        // Avoid repeatedly writing the exact same error from Unity's repeated log callbacks.
         if (signature == lastSignature && now - lastWriteTime < 2.0)
             return;
 
         lastSignature = signature;
         lastWriteTime = now;
 
-        // File IO is performed on the main thread because Unity editor callbacks can arrive
-        // from a worker thread when using logMessageReceivedThreaded.
         EditorApplication.delayCall += () => WriteError(safeCondition, safeStackTrace, type);
     }
 
@@ -59,7 +82,7 @@ public static class CompanyGameErrorReporter
 
             string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
             if (string.IsNullOrEmpty(projectRoot))
-                return;
+                throw new InvalidOperationException("Could not determine Unity project root.");
 
             string resultsPath = Path.Combine(projectRoot, ResultsDirectory);
             Directory.CreateDirectory(resultsPath);
@@ -76,11 +99,12 @@ public static class CompanyGameErrorReporter
                           "}\n";
 
             File.WriteAllText(filePath, json, new UTF8Encoding(false));
-            Debug.Log("[Company Game] Unity error captured: " + filePath);
+            AssetDatabase.Refresh();
+            Debug.Log("[Company Game] Error captured: " + filePath);
         }
         catch (Exception ex)
         {
-            Debug.LogWarning("[Company Game] Failed to write error.json: " + ex.Message);
+            Debug.LogWarning("[Company Game] Failed to write error.json: " + ex);
         }
         finally
         {
