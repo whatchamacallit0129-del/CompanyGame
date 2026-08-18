@@ -1,7 +1,7 @@
 {
   "success": false,
   "type": "Error",
-  "timestamp": "2026-08-18 18:04:02.337",
-  "message": "[Company Game] FAILED: Unity reported errors while executing the command.",
-  "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:98)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
+  "timestamp": "2026-08-18 18:29:54.367",
+  "message": "[Company Game] FAILED: Duplicate final name in batch: 이한결",
+  "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:59)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
 }
