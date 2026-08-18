@@ -1,12 +1,12 @@
 ﻿{
-  "id": "e037bacb24d4e6ea4496a9cb75170fb1498fa3a46c13355878be6a27095e9812",
-  "command": "DELETE_OBJECT:직원:5",
-  "success": true,
-  "message": "Deleted 5 object(s): 직원",
+  "id": "49293e467b3b83b3d36cb6ae662c53fa704b2bae31653a6f70b50b77d536cec8",
+  "command": "{\r\n  \"content\": \"CREATE_OBJECT:직원:5\\n\",\r\n  \"encoding\": \"utf-8\"\r\n}",
+  "success": false,
+  "message": "Unknown command: {\r\n  \"CONTENT\"",
   "exception": "",
   "createdObjects": [],
   "createdObjectIds": [],
-  "deletedObjects": ["직원 (5)", "직원 (4)", "직원 (3)", "직원 (2)", "직원 (1)"],
-  "deletedObjectIds": ["EMP-002390", "EMP-002389", "EMP-002388", "EMP-002387", "EMP-002386"],
+  "deletedObjects": [],
+  "deletedObjectIds": [],
   "renamedObjects": []
 }
