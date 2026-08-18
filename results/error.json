@@ -1,7 +1,8 @@
 {
-  "success": false,
-  "type": "Exception",
-  "timestamp": "2026-08-18 18:56:24.871",
-  "message": "NullReferenceException: Object reference not set to an instance of an object",
-  "stackTrace": "CompanyGameIdentityClassifier.ClassifySceneObjects () (at Assets/Editor/CompanyGameIdentityClassifier.cs:34)\nUnityEditor.EditorApplication.Internal_CallHierarchyHasChanged () (at <da871bb30d6448e2981f366171b14bb9>:0)\n"
+  "id":"92a9cd1407bedc9f72bc366c6673bc051ff4113cc9b0fdc173fb07230cd737ed",
+  "command":"CREATE_INTERACTABLE_OBJECT:직원:5",
+  "success":false,
+  "message":"Command execution exception: Object reference not set to an instance of an object",
+  "exception":"System.NullReferenceException: Object reference not set to an instance of an object\r\n  at CompanyGameCommandAgent.CreateSingleInteractable (System.String name, System.String category) [0x00029] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:271 \r\n  at CompanyGameCommandAgent.CreateInteractableObject (CompanyGameCommandAgent+CommandRequest request) [0x0027e] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:217 \r\n  at CompanyGameCommandAgent.Execute (CompanyGameCommandAgent+CommandRequest request) [0x00000] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:167 \r\n  at CompanyGameCommandAgent.CheckCommand () [0x0005f] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:73 ",
+  "errors":[]
 }
