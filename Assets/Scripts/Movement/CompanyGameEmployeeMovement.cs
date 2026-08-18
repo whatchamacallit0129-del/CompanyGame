@@ -2,15 +2,14 @@ using UnityEngine;
 
 /// <summary>
 /// Movement agent for employees and future controllable actors.
-/// It knows how to move along a supplied navigation path, but knows nothing
-/// about corridors, doors or how the graph was authored.
+/// Movement tuning is data-driven; navigation only supplies a path.
 /// </summary>
 public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 {
-    [Header("Movement")]
-    [SerializeField] private float moveSpeed = 2f;
+    [Header("Movement Policy")]
+    [SerializeField] private CompanyGameEmployeeMovementSettings settings;
+    [SerializeField] private float moveSpeedOverride = 0f;
     [SerializeField] private int floor;
-    [SerializeField] private bool useUnscaledTime;
 
     private CompanyGameNavigationService navigation;
     private CompanyGamePath currentPath;
@@ -20,8 +19,12 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 
     public bool IsMoving => moving;
     public Vector3 Destination => destination;
-    public float MoveSpeed => Mathf.Max(0.01f, moveSpeed);
+    public float MoveSpeed => moveSpeedOverride > 0f ? moveSpeedOverride : (settings != null ? settings.MoveSpeed : 2f);
     public int Floor => floor;
+    public CompanyGamePath CurrentPath => currentPath;
+    public CompanyGamePathNode CurrentTargetNode => currentPath != null && currentPath.IsValid && pathIndex < currentPath.Nodes.Count
+        ? currentPath.Nodes[pathIndex]
+        : null;
 
     private void Awake()
     {
@@ -32,7 +35,10 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
     {
         if (!moving || currentPath == null || !currentPath.IsValid) return;
 
-        float remaining = (useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime) * MoveSpeed;
+        float deltaTime = settings != null && settings.UseUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
+        float remaining = deltaTime * MoveSpeed;
+        float nodeArrivalDistance = settings != null ? settings.NodeArrivalDistance : 0.06f;
+        float destinationArrivalDistance = settings != null ? settings.DestinationArrivalDistance : 0.06f;
 
         while (remaining > 0f && pathIndex < currentPath.Nodes.Count)
         {
@@ -48,7 +54,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
             remaining -= Vector3.Distance(transform.position, next);
             transform.position = next;
 
-            if (Vector3.Distance(transform.position, target) <= 0.01f)
+            if (Vector3.Distance(transform.position, target) <= nodeArrivalDistance)
                 pathIndex++;
             else
                 break;
@@ -57,29 +63,31 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
         if (pathIndex >= currentPath.Nodes.Count)
         {
             transform.position = Vector3.MoveTowards(transform.position, destination, remaining);
-            if (Vector3.Distance(transform.position, destination) <= 0.01f)
+            if (Vector3.Distance(transform.position, destination) <= destinationArrivalDistance)
             {
                 transform.position = destination;
                 moving = false;
                 currentPath = null;
+                pathIndex = 0;
             }
         }
     }
 
     public bool MoveTo(Vector3 worldPosition)
     {
-        CompanyGamePath path = navigation.FindPath(transform.position, worldPosition, floor);
+        float snapDistance = settings != null ? settings.NodeSnapDistance : 2.5f;
+        CompanyGamePath path = navigation.FindPath(transform.position, worldPosition, floor, snapDistance);
         if (!path.IsValid)
         {
             StopMovement();
-            Debug.LogWarning($"[Company Game] No navigation route for {name}. Make sure the destination is on a reachable node network.", this);
+            Debug.LogWarning($"[Company Game] No reachable route for {name}. Destination is not on a reachable navigation network.", this);
             return false;
         }
 
         destination = worldPosition;
         currentPath = path;
         pathIndex = path.Nodes.Count > 0 &&
-                    Vector3.Distance(transform.position, path.Nodes[0].transform.position) <= 0.01f
+                    Vector3.Distance(transform.position, path.Nodes[0].transform.position) <= (settings != null ? settings.NodeArrivalDistance : 0.06f)
             ? 1
             : 0;
         moving = true;
