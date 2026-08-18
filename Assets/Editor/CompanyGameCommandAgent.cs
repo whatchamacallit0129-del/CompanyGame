@@ -1,12 +1,33 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
 public static class CompanyGameCommandAgent
 {
     private const string CommandFileName = "command.json";
+
+    // Command handlers are registered here instead of using a large switch statement.
+    // Adding a new command means registering a handler, while the execution pipeline stays unchanged.
+    private static readonly Dictionary<string, Func<string, bool>> CommandHandlers =
+        new Dictionary<string, Func<string, bool>>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "CREATE_INTERACTABLE_OBJECT", CreateInteractableObject },
+            { "CREATE_EMPTY_OBJECT", CreateEmptyObject },
+            { "CREATE_OBJECT", CreateEmptyObject },
+            { "DELETE_OBJECT", DeleteObjectByName },
+            { "RENAME_OBJECT", RenameObject },
+            { "SET_ACTIVE", SetActive },
+            { "SET_POSITION", SetPosition },
+            { "SET_SCALE", SetScale },
+            { "SET_ROTATION", SetRotation },
+            { "SET_PARENT", SetParent },
+            { "ADD_COMPONENT", AddComponent },
+            { "REMOVE_COMPONENT", RemoveComponent }
+        };
 
     [InitializeOnLoadMethod]
     private static void StartWatching()
@@ -41,64 +62,55 @@ public static class CompanyGameCommandAgent
             {
                 File.Delete(commandPath);
                 AssetDatabase.Refresh();
-
                 Debug.Log("[Company Game] Command executed: " + command);
             }
         }
         catch (Exception exception)
         {
-            Debug.LogError(
-                "[Company Game] Command execution failed:\n" + exception
-            );
+            Debug.LogError("[Company Game] Command execution failed:\n" + exception);
         }
     }
 
-    private static bool ExecuteCommand(string command)
+    private static bool ExecuteCommand(string rawCommand)
     {
-        string[] parts = command.Split(new[] { ':' }, 2);
-        string commandName = parts[0].Trim().ToUpperInvariant();
-        string argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+        ParsedCommand parsed = ParseCommand(rawCommand);
 
-        switch (commandName)
+        if (parsed == null)
         {
-            case "CREATE_INTERACTABLE_OBJECT":
-                CreateInteractableObject(argument);
-                return true;
+            Debug.LogWarning("[Company Game] Invalid command: " + rawCommand);
+            return false;
+        }
 
-            case "CREATE_EMPTY_OBJECT":
-                CreateEmptyObject(argument);
-                return true;
+        if (!CommandHandlers.TryGetValue(parsed.Name, out Func<string, bool> handler))
+        {
+            Debug.LogWarning("[Company Game] Unknown command: " + parsed.Name);
+            return false;
+        }
 
-            case "DELETE_OBJECT":
-                return DeleteObjectByName(argument);
+        return handler(parsed.Arguments);
+    }
 
-            case "RENAME_OBJECT":
-                return RenameObject(argument);
+    private static ParsedCommand ParseCommand(string rawCommand)
+    {
+        string[] parts = rawCommand.Split(new[] { ':' }, 2);
+        string name = parts[0].Trim().ToUpperInvariant();
+        string arguments = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
-            case "SET_ACTIVE":
-                return SetActive(argument);
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
 
-            case "SET_POSITION":
-                return SetPosition(argument);
+        return new ParsedCommand(name, arguments);
+    }
 
-            case "SET_SCALE":
-                return SetScale(argument);
+    private sealed class ParsedCommand
+    {
+        public string Name { get; }
+        public string Arguments { get; }
 
-            case "SET_ROTATION":
-                return SetRotation(argument);
-
-            case "SET_PARENT":
-                return SetParent(argument);
-
-            case "ADD_COMPONENT":
-                return AddComponent(argument);
-
-            case "REMOVE_COMPONENT":
-                return RemoveComponent(argument);
-
-            default:
-                Debug.LogWarning("[Company Game] Unknown command: " + command);
-                return false;
+        public ParsedCommand(string name, string arguments)
+        {
+            Name = name;
+            Arguments = arguments;
         }
     }
 
@@ -118,11 +130,9 @@ public static class CompanyGameCommandAgent
         return target;
     }
 
-    private static void CreateInteractableObject(string objectName)
+    private static bool CreateInteractableObject(string arguments)
     {
-        if (string.IsNullOrWhiteSpace(objectName))
-            objectName = "InteractableObject";
-
+        string objectName = GetOptionalArgument(arguments, "InteractableObject");
         GameObject interactable = new GameObject(objectName);
 
         SpriteRenderer spriteRenderer = interactable.AddComponent<SpriteRenderer>();
@@ -132,21 +142,20 @@ public static class CompanyGameCommandAgent
         BoxCollider2D collider = interactable.AddComponent<BoxCollider2D>();
         collider.size = Vector2.one;
 
-        interactable.AddComponent<DraggableObject2D>();
-        interactable.AddComponent<InteractableObject2D>();
+        TryAddComponentByName(interactable, "DraggableObject2D");
+        TryAddComponentByName(interactable, "InteractableObject2D");
 
         Undo.RegisterCreatedObjectUndo(interactable, "Create Interactable Object");
         Selection.activeGameObject = interactable;
         EditorUtility.SetDirty(interactable);
 
         Debug.Log("[Company Game] InteractableObject created: " + objectName);
+        return true;
     }
 
-    private static void CreateEmptyObject(string objectName)
+    private static bool CreateEmptyObject(string arguments)
     {
-        if (string.IsNullOrWhiteSpace(objectName))
-            objectName = "CompanyObject";
-
+        string objectName = GetOptionalArgument(arguments, "CompanyObject");
         GameObject emptyObject = new GameObject(objectName);
 
         Undo.RegisterCreatedObjectUndo(emptyObject, "Create Company Object");
@@ -154,27 +163,24 @@ public static class CompanyGameCommandAgent
         EditorUtility.SetDirty(emptyObject);
 
         Debug.Log("[Company Game] Empty object created: " + objectName);
+        return true;
     }
 
-    private static bool DeleteObjectByName(string objectName)
+    private static bool DeleteObjectByName(string arguments)
     {
-        GameObject target = FindObject(objectName);
+        GameObject target = FindObject(arguments.Trim());
         if (target == null)
             return false;
 
         Undo.DestroyObjectImmediate(target);
-        Debug.Log("[Company Game] Object deleted: " + objectName);
+        Debug.Log("[Company Game] Object deleted: " + target.name);
         return true;
     }
 
-    private static bool RenameObject(string argument)
+    private static bool RenameObject(string arguments)
     {
-        string[] values = SplitArguments(argument, 2);
-        if (values.Count != 2)
-        {
-            Debug.LogWarning("[Company Game] RENAME_OBJECT requires: oldName:newName");
+        if (!TryGetArguments(arguments, 2, out string[] values))
             return false;
-        }
 
         GameObject target = FindObject(values[0]);
         if (target == null || string.IsNullOrWhiteSpace(values[1]))
@@ -186,10 +192,10 @@ public static class CompanyGameCommandAgent
         return true;
     }
 
-    private static bool SetActive(string argument)
+    private static bool SetActive(string arguments)
     {
-        string[] values = SplitArguments(argument, 2);
-        if (values.Count != 2 || !bool.TryParse(values[1], out bool active))
+        if (!TryGetArguments(arguments, 2, out string[] values) ||
+            !bool.TryParse(values[1], out bool active))
         {
             Debug.LogWarning("[Company Game] SET_ACTIVE requires: objectName:true/false");
             return false;
@@ -205,71 +211,38 @@ public static class CompanyGameCommandAgent
         return true;
     }
 
-    private static bool SetPosition(string argument)
+    private static bool SetPosition(string arguments)
     {
-        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
+        return SetTransformVector(arguments, "Set Position", (transform, value) => transform.position = value);
+    }
+
+    private static bool SetScale(string arguments)
+    {
+        return SetTransformVector(arguments, "Set Scale", (transform, value) => transform.localScale = value);
+    }
+
+    private static bool SetRotation(string arguments)
+    {
+        return SetTransformVector(arguments, "Set Rotation", (transform, value) => transform.eulerAngles = value);
+    }
+
+    private static bool SetTransformVector(
+        string arguments,
+        string undoName,
+        Action<Transform, Vector3> apply)
+    {
+        if (!TryGetVectorArguments(arguments, out GameObject target, out Vector3 value))
             return false;
 
-        Undo.RecordObject(target.transform, "Set Position");
-        target.transform.position = value;
+        Undo.RecordObject(target.transform, undoName);
+        apply(target.transform, value);
         EditorUtility.SetDirty(target);
         return true;
     }
 
-    private static bool SetScale(string argument)
+    private static bool SetParent(string arguments)
     {
-        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
-            return false;
-
-        Undo.RecordObject(target.transform, "Set Scale");
-        target.transform.localScale = value;
-        EditorUtility.SetDirty(target);
-        return true;
-    }
-
-    private static bool SetRotation(string argument)
-    {
-        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
-            return false;
-
-        Undo.RecordObject(target.transform, "Set Rotation");
-        target.transform.eulerAngles = value;
-        EditorUtility.SetDirty(target);
-        return true;
-    }
-
-    private static bool TryGetTransformVector(
-        string argument,
-        out GameObject target,
-        out Vector3 value)
-    {
-        target = null;
-        value = Vector3.zero;
-
-        string[] values = SplitArguments(argument, 4);
-        if (values.Count != 4 ||
-            !float.TryParse(values[1], out float x) ||
-            !float.TryParse(values[2], out float y) ||
-            !float.TryParse(values[3], out float z))
-        {
-            Debug.LogWarning(
-                "[Company Game] Transform command requires: objectName:x:y:z"
-            );
-            return false;
-        }
-
-        target = FindObject(values[0]);
-        if (target == null)
-            return false;
-
-        value = new Vector3(x, y, z);
-        return true;
-    }
-
-    private static bool SetParent(string argument)
-    {
-        string[] values = SplitArguments(argument, 2);
-        if (values.Count != 2)
+        if (!TryGetArguments(arguments, 2, out string[] values))
         {
             Debug.LogWarning("[Company Game] SET_PARENT requires: childName:parentName");
             return false;
@@ -279,21 +252,21 @@ public static class CompanyGameCommandAgent
         if (child == null)
             return false;
 
-        GameObject parent = string.IsNullOrWhiteSpace(values[1])
-            ? null
-            : FindObject(values[1]);
-
-        if (!string.IsNullOrWhiteSpace(values[1]) && parent == null)
-            return false;
+        GameObject parent = null;
+        if (!string.IsNullOrWhiteSpace(values[1]) && values[1] != "NONE")
+        {
+            parent = FindObject(values[1]);
+            if (parent == null)
+                return false;
+        }
 
         Undo.SetTransformParent(child.transform, parent?.transform, "Set Parent");
         return true;
     }
 
-    private static bool AddComponent(string argument)
+    private static bool AddComponent(string arguments)
     {
-        string[] values = SplitArguments(argument, 2);
-        if (values.Count != 2)
+        if (!TryGetArguments(arguments, 2, out string[] values))
         {
             Debug.LogWarning("[Company Game] ADD_COMPONENT requires: objectName:ComponentType");
             return false;
@@ -304,27 +277,23 @@ public static class CompanyGameCommandAgent
             return false;
 
         Type componentType = FindComponentType(values[1]);
-        if (componentType == null || !typeof(Component).IsAssignableFrom(componentType))
+        if (!IsValidComponentType(componentType))
         {
             Debug.LogWarning("[Company Game] Component type not found: " + values[1]);
             return false;
         }
 
         if (target.GetComponent(componentType) != null)
-        {
-            Debug.Log("[Company Game] Component already exists: " + values[1]);
             return true;
-        }
 
         Undo.AddComponent(target, componentType);
         EditorUtility.SetDirty(target);
         return true;
     }
 
-    private static bool RemoveComponent(string argument)
+    private static bool RemoveComponent(string arguments)
     {
-        string[] values = SplitArguments(argument, 2);
-        if (values.Count != 2)
+        if (!TryGetArguments(arguments, 2, out string[] values))
         {
             Debug.LogWarning("[Company Game] REMOVE_COMPONENT requires: objectName:ComponentType");
             return false;
@@ -335,7 +304,7 @@ public static class CompanyGameCommandAgent
             return false;
 
         Type componentType = FindComponentType(values[1]);
-        if (componentType == null || !typeof(Component).IsAssignableFrom(componentType))
+        if (!IsValidComponentType(componentType))
         {
             Debug.LogWarning("[Company Game] Component type not found: " + values[1]);
             return false;
@@ -354,37 +323,112 @@ public static class CompanyGameCommandAgent
 
     private static Type FindComponentType(string typeName)
     {
-        foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        string requestedName = typeName.Trim();
+
+        foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
             {
-                Type type = assembly.GetType(typeName);
-                if (type != null)
-                    return type;
+                Type exactType = assembly.GetType(requestedName);
+                if (exactType != null)
+                    return exactType;
 
                 foreach (Type candidate in assembly.GetTypes())
                 {
-                    if (candidate.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase))
+                    if (candidate.Name.Equals(requestedName, StringComparison.OrdinalIgnoreCase))
                         return candidate;
                 }
             }
-            catch (System.Reflection.ReflectionTypeLoadException)
+            catch (ReflectionTypeLoadException)
             {
-                // Ignore assemblies Unity cannot fully reflect during compilation.
+                // Some Unity assemblies cannot be fully reflected while compiling.
             }
         }
 
         return null;
     }
 
-    private static List<string> SplitArguments(string argument, int expectedCount)
+    private static bool TryAddComponentByName(GameObject target, string typeName)
     {
-        string[] raw = argument.Split(':');
-        var result = new List<string>(raw.Length);
+        Type componentType = FindComponentType(typeName);
+        if (!IsValidComponentType(componentType))
+        {
+            Debug.LogWarning("[Company Game] Optional component not found: " + typeName);
+            return false;
+        }
 
-        foreach (string item in raw)
-            result.Add(item.Trim());
+        if (target.GetComponent(componentType) != null)
+            return true;
 
-        return result.Count == expectedCount ? result : new List<string>();
+        Undo.AddComponent(target, componentType);
+        return true;
+    }
+
+    private static bool IsValidComponentType(Type type)
+    {
+        return type != null && typeof(Component).IsAssignableFrom(type) && !type.IsAbstract;
+    }
+
+    private static string GetOptionalArgument(string arguments, string fallback)
+    {
+        string value = arguments.Trim();
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static bool TryGetArguments(string arguments, int expectedCount, out string[] values)
+    {
+        values = arguments.Split(':');
+
+        if (values.Length != expectedCount)
+        {
+            Debug.LogWarning(
+                "[Company Game] Expected " + expectedCount +
+                " arguments but received " + values.Length + "."
+            );
+            values = null;
+            return false;
+        }
+
+        for (int i = 0; i < values.Length; i++)
+            values[i] = values[i].Trim();
+
+        return true;
+    }
+
+    private static bool TryGetVectorArguments(
+        string arguments,
+        out GameObject target,
+        out Vector3 value)
+    {
+        target = null;
+        value = Vector3.zero;
+
+        if (!TryGetArguments(arguments, 4, out string[] values) ||
+            !TryParseFloat(values[1], out float x) ||
+            !TryParseFloat(values[2], out float y) ||
+            !TryParseFloat(values[3], out float z))
+        {
+            Debug.LogWarning(
+                "[Company Game] Transform command requires: objectName:x:y:z"
+            );
+            return false;
+        }
+
+        target = FindObject(values[0]);
+        if (target == null)
+            return false;
+
+        value = new Vector3(x, y, z);
+        return true;
+    }
+
+    private static bool TryParseFloat(string value, out float result)
+    {
+        return float.TryParse(
+            value,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out result
+        );
     }
 }
