@@ -37,7 +37,6 @@ public static class CompanyGameCorridorVisualization
     {
         if (!ShowAll) return;
 
-        // Unity 6+ API: no deprecated FindObjectsSortMode argument.
         CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>();
         foreach (CompanyGameCorridor corridor in corridors)
         {
@@ -48,14 +47,22 @@ public static class CompanyGameCorridorVisualization
 
     private static void DrawCorridor(CompanyGameCorridor corridor)
     {
-        bool connected = corridor.ConnectedCorridors.Count > 0;
-        Handles.color = connected ? Color.green : Color.blue;
+        bool corridorConnected = corridor.ConnectedCorridors.Count > 0;
+
+        Handles.color = corridorConnected ? Color.green : Color.blue;
 
         foreach (CompanyGamePathNode node in corridor.Nodes)
         {
             if (node == null) continue;
 
-            float size = HandleUtility.GetHandleSize(node.transform.position) * 0.13f;
+            bool nodeConnected = node.Connections.Count > 0;
+            bool selected = Selection.activeGameObject == node.gameObject;
+
+            Handles.color = selected
+                ? Color.yellow
+                : nodeConnected ? Color.green : Color.blue;
+
+            float size = HandleUtility.GetHandleSize(node.transform.position) * 0.14f;
             Handles.SphereHandleCap(
                 0,
                 node.transform.position,
@@ -66,11 +73,13 @@ public static class CompanyGameCorridorVisualization
             foreach (CompanyGamePathNode connection in node.Connections)
             {
                 if (connection == null) continue;
-                Handles.DrawAAPolyLine(2f, node.transform.position, connection.transform.position);
+
+                Handles.color = Color.green;
+                Handles.DrawAAPolyLine(2.5f, node.transform.position, connection.transform.position);
             }
         }
 
-        if (!connected) return;
+        if (!corridorConnected) return;
 
         Handles.color = Color.green;
         foreach (CompanyGameCorridor other in corridor.ConnectedCorridors)
