@@ -1,0 +1,5 @@
+body { font-family: system-ui, sans-serif; margin: 16px; background: #111827; color: #f3f4f6; }
+h1 { font-size: 18px; margin-top: 0; }
+#status { padding: 10px; border-radius: 8px; background: #1f2937; margin-bottom: 12px; }
+button { margin: 4px 4px 4px 0; padding: 8px 12px; border: 0; border-radius: 6px; cursor: pointer; }
+pre { white-space: pre-wrap; font-size: 12px; background: #0b1220; padding: 10px; border-radius: 8px; }
