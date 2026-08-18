@@ -18,6 +18,8 @@ public static class CompanyGameCommandAgent
         { "RENAME_OBJECT", RenameObject }
     };
     private static string CommandFilePath => Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.json"));
+    private static string ProcessingFilePath => Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.processing.json"));
+    private static bool commandInProgress;
 
     [InitializeOnLoadMethod]
     private static void Initialize()
@@ -28,29 +30,48 @@ public static class CompanyGameCommandAgent
 
     private static void CheckCommand()
     {
+        if (commandInProgress) return;
         string path = CommandFilePath;
         if (!File.Exists(path)) return;
         try
         {
-            string raw = File.ReadAllText(path, Encoding.UTF8).Trim();
-            if (string.IsNullOrWhiteSpace(raw)) return;
-            ExecuteAndReport(raw, path);
+            commandInProgress = true;
+            if (File.Exists(ProcessingFilePath)) SafeDelete(ProcessingFilePath);
+            File.Move(path, ProcessingFilePath);
+            string raw = File.ReadAllText(ProcessingFilePath, Encoding.UTF8).Trim();
+            if (string.IsNullOrWhiteSpace(raw)) { SafeDelete(ProcessingFilePath); commandInProgress = false; return; }
+            ExecuteAndReport(raw, ProcessingFilePath);
         }
-        catch (Exception ex) { Debug.LogError("[Company Game] Agent error: " + ex); }
+        catch (Exception ex)
+        {
+            Debug.LogError("[Company Game] Agent error: " + ex);
+            SafeDelete(path);
+            SafeDelete(ProcessingFilePath);
+            commandInProgress = false;
+        }
     }
 
-    private static void ExecuteAndReport(string raw, string path)
+    private static void ExecuteAndReport(string raw, string processingPath)
     {
-        string id = GetCommandId(raw, path);
+        string id = GetCommandId(raw, processingPath);
         CommandResult result;
         try { result = Execute(ParseCommand(raw)); }
         catch (Exception ex)
         {
             result = CommandResult.Failure("Command execution exception: " + ex.Message);
             result.Exception = ex.ToString();
+            result.Errors.Add(new LogRecord("Exception", ex.Message, ex.StackTrace));
         }
-        WriteResult(path, id, raw, result);
-        SafeDelete(path);
+
+        try { WriteResult(id, raw, result); }
+        catch (Exception ex)
+        {
+            Debug.LogError("[Company Game] Failed to write result.json: " + ex);
+            WriteErrorFallback(id, raw, ex);
+        }
+
+        SafeDelete(processingPath);
+        commandInProgress = false;
         AssetDatabase.Refresh();
     }
 
@@ -294,13 +315,29 @@ public static class CompanyGameCommandAgent
         return null;
     }
 
-    private static void WriteResult(string projectPath, string id, string raw, CommandResult result)
+    private static void WriteResult(string id, string raw, CommandResult result)
     {
-        string resultsDir = Path.Combine(projectPath, "results"); Directory.CreateDirectory(resultsDir); string path = Path.Combine(resultsDir, "result.json");
+        string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        string resultsDir = Path.Combine(projectRoot, "results");
+        Directory.CreateDirectory(resultsDir);
+        string path = Path.Combine(resultsDir, "result.json");
         StringBuilder sb = new StringBuilder(); sb.AppendLine("{");
         sb.AppendLine("  \"id\": \"" + Escape(id) + "\","); sb.AppendLine("  \"command\": \"" + Escape(raw) + "\","); sb.AppendLine("  \"success\": " + (result.Success ? "true" : "false") + ","); sb.AppendLine("  \"message\": \"" + Escape(result.Message) + "\","); sb.AppendLine("  \"exception\": \"" + Escape(result.Exception ?? "") + "\",");
         WriteStringArray(sb, "createdObjects", result.CreatedObjects, true); WriteStringArray(sb, "createdObjectIds", result.CreatedObjectIds, true); WriteStringArray(sb, "deletedObjects", result.DeletedObjects, true); WriteStringArray(sb, "deletedObjectIds", result.DeletedObjectIds, true); WriteStringArray(sb, "renamedObjects", result.RenamedObjects, false);
         sb.AppendLine("}"); File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+    }
+
+    private static void WriteErrorFallback(string id, string raw, Exception ex)
+    {
+        try
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string resultsDir = Path.Combine(projectRoot, "results"); Directory.CreateDirectory(resultsDir);
+            string path = Path.Combine(resultsDir, "error.json");
+            string json = "{\n  \"id\": \"" + Escape(id) + "\",\n  \"command\": \"" + Escape(raw) + "\",\n  \"success\": false,\n  \"message\": \"Agent reporting failed\",\n  \"exception\": \"" + Escape(ex.ToString()) + "\"\n}";
+            File.WriteAllText(path, json, Encoding.UTF8);
+        }
+        catch { }
     }
 
     private static void WriteStringArray(StringBuilder sb, string name, List<string> values, bool commaAfter)
