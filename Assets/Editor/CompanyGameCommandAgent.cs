@@ -368,7 +368,7 @@ public static class CompanyGameCommandAgent
                         return candidate;
                 }
             }
-            catch (ReflectionTypeLoadException)
+            catch (System.Reflection.ReflectionTypeLoadException)
             {
                 // Ignore assemblies Unity cannot fully reflect during compilation.
             }
