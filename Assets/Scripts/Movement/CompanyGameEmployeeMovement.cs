@@ -21,6 +21,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
     public Vector3 Destination => destination;
     public float MoveSpeed => moveSpeedOverride > 0f ? moveSpeedOverride : (settings != null ? settings.MoveSpeed : 2f);
     public int Floor => floor;
+    public CompanyGameEmployeeMovementSettings Settings => settings;
     public CompanyGamePath CurrentPath => currentPath;
     public CompanyGamePathNode CurrentTargetNode => currentPath != null && currentPath.IsValid && pathIndex < currentPath.Nodes.Count
         ? currentPath.Nodes[pathIndex]
