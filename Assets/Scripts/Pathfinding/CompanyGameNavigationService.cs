@@ -42,9 +42,11 @@ public sealed class CompanyGameNavigationService
             foreach (CompanyGamePathNode next in current.Connections)
             {
                 if (next == null || next.Floor != start.Floor) continue;
+                if (!distance.ContainsKey(current)) continue;
 
                 float edgeDistance = Vector3.Distance(current.transform.position, next.transform.position);
-                float candidate = distance[current] + Mathf.Max(0.01f, edgeDistance) * next.MovementCost;
+                float movementCost = Mathf.Max(0.01f, next.MovementCost);
+                float candidate = distance[current] + Mathf.Max(0.01f, edgeDistance) * movementCost;
 
                 if (!distance.TryGetValue(next, out float known) || candidate < known)
                 {
@@ -55,7 +57,7 @@ public sealed class CompanyGameNavigationService
             }
         }
 
-        if (!previous.ContainsKey(goal)) return new CompanyGamePath(null);
+        if (!distance.ContainsKey(goal)) return new CompanyGamePath(null);
 
         var result = new List<CompanyGamePathNode> { goal };
         CompanyGamePathNode cursor = goal;
