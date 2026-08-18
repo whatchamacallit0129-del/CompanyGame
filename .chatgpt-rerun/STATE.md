@@ -1,9 +1,9 @@
 # Rerun State
 
 - run_id: rerun-20260819-companygame-8f2c1d7a
-- sequence: 1
-- task_id: architecture-audit
-- status: needs_user
-- checkpoint: Safety-first workflow prepared. A backup snapshot of the previous sequence-0 Rerun contract/state was created before changing the active plan. Verified movement/navigation source work is preserved and will not be repeated.
-- verification: Source-level movement, selection, navigation graph/service, and movement bootstrap were already verified before this sequence. No gameplay code was changed in the safety transition.
-- next_exact_action: After the user authorizes the audit task, inspect the current Unity project structure and relevant source, map responsibilities/dependencies/data flow, identify risky coupling and automation boundaries, and write an architecture audit without changing gameplay code.
+- sequence: 2
+- task_id: corridor-node-authoring
+- status: continue
+- checkpoint: architecture-audit completed in ARCHITECTURE.md; existing corridor/node/navigation/employee movement source was inspected and preserved. User authorized continued implementation testing.
+- verification: Corridor, path-node, navigation graph/service, employee movement, movement bootstrap, and employee selection source boundaries verified. Runtime behavior remains unverified until Unity Play Mode/test output is available.
+- next_exact_action: Inspect existing corridor/node editor tooling and runtime connection behavior, then make the smallest modular improvement needed for a clear, reusable authoring workflow. Do not modify the Rerun extension.
