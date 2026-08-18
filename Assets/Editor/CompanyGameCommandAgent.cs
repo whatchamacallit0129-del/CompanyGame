@@ -21,6 +21,8 @@ public static class CompanyGameCommandAgent
     private static string CommandFilePath => Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.json"));
     private static string ProcessingFilePath => Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.processing.json"));
     private static bool commandInProgress;
+    private const int FileMoveAttempts = 10;
+    private const int FileMoveDelayMs = 75;
 
     [InitializeOnLoadMethod]
     private static void Initialize()
@@ -31,22 +33,65 @@ public static class CompanyGameCommandAgent
 
     private static void CheckCommand()
     {
-        if (commandInProgress) return;
-        if (!File.Exists(CommandFilePath)) return;
+        if (commandInProgress || !File.Exists(CommandFilePath)) return;
+
         try
         {
             commandInProgress = true;
-            if (File.Exists(ProcessingFilePath)) SafeDelete(ProcessingFilePath);
-            File.Move(CommandFilePath, ProcessingFilePath);
-            string raw = File.ReadAllText(ProcessingFilePath, Encoding.UTF8).Trim();
-            if (string.IsNullOrWhiteSpace(raw)) { SafeDelete(ProcessingFilePath); commandInProgress = false; return; }
+
+            // A producer may still be closing command.json. Do not treat a transient
+            // sharing violation as a command failure, and never delete the producer's file.
+            if (!TryClaimCommandFile())
+            {
+                commandInProgress = false;
+                return;
+            }
+
+            string raw = File.ReadAllText(ProcessingFilePath, Encoding.UTF8).Trim().TrimStart('\uFEFF');
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                SafeDelete(ProcessingFilePath);
+                commandInProgress = false;
+                return;
+            }
+
             ExecuteAndReport(raw, ProcessingFilePath);
         }
         catch (Exception ex)
         {
             Debug.LogError("[Company Game] Agent error: " + ex);
-            SafeDelete(CommandFilePath); SafeDelete(ProcessingFilePath); commandInProgress = false;
+            SafeDelete(ProcessingFilePath);
+            // command.json is intentionally NOT deleted here. If claiming failed,
+            // the producer still owns it; if processing failed, retaining the source
+            // lets the next editor tick retry instead of silently losing work.
+            commandInProgress = false;
         }
+    }
+
+    private static bool TryClaimCommandFile()
+    {
+        if (File.Exists(ProcessingFilePath)) SafeDelete(ProcessingFilePath);
+
+        for (int attempt = 0; attempt < FileMoveAttempts; attempt++)
+        {
+            try
+            {
+                File.Move(CommandFilePath, ProcessingFilePath);
+                return true;
+            }
+            catch (IOException)
+            {
+                if (attempt == FileMoveAttempts - 1) return false;
+                System.Threading.Thread.Sleep(FileMoveDelayMs);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt == FileMoveAttempts - 1) return false;
+                System.Threading.Thread.Sleep(FileMoveDelayMs);
+            }
+        }
+
+        return false;
     }
 
     private static void ExecuteAndReport(string raw, string processingPath)
