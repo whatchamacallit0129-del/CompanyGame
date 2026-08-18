@@ -5,14 +5,12 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Lobotomy-Corp-inspired command input: left click selects an employee,
 /// left drag selects a group, and right click issues one destination command.
-/// Destination clicks on a Node are snapped to that Node. The controller
-/// contains no employee-specific rules.
+/// Destination clicks are snapped to a reachable Node on the selected employee's floor.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
 {
     [SerializeField] private LayerMask employeeLayer = ~0;
-    [SerializeField] private LayerMask nodeLayer = ~0;
     [Min(1f)] [SerializeField] private float dragThreshold = 8f;
     [Min(1f)] [SerializeField] private float selectionFallbackRadius = 0.75f;
     [SerializeField] private bool allowBoxSelection = true;
@@ -65,11 +63,7 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
     {
         Vector3 world = ScreenToWorld(screen);
         CompanyGameEmployeeMovement employee = FindEmployeeByCollider(world);
-
-        // Fallback makes selection work even when an employee prefab has no
-        // Collider2D yet. It is data-driven and can be tuned without code changes.
-        if (employee == null)
-            employee = FindNearestEmployee(world, selectionFallbackRadius);
+        if (employee == null) employee = FindNearestEmployee(world, selectionFallbackRadius);
 
         ClearSelection();
         if (employee != null) AddSelection(employee);
@@ -123,7 +117,6 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
             if (employee != null) AddSelection(employee);
         }
 
-        // Collider-free fallback for box selection.
         if (selected.Count == 0)
         {
             foreach (CompanyGameEmployeeMovement employee in FindObjectsByType<CompanyGameEmployeeMovement>(FindObjectsSortMode.None))
@@ -138,7 +131,7 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
         Vector3 destination = ScreenToWorld(screen);
         if (snapDestinationToNode)
         {
-            CompanyGamePathNode node = FindNearestNode(destination);
+            CompanyGamePathNode node = FindNearestReachableNode(destination);
             if (node != null) destination = node.transform.position;
         }
 
@@ -152,16 +145,28 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
         }
     }
 
-    private CompanyGamePathNode FindNearestNode(Vector3 world)
+    private CompanyGamePathNode FindNearestReachableNode(Vector3 world)
     {
         CompanyGameNavigationGraph graph = CompanyGameNavigationGraph.Instance;
         graph.Refresh();
+
         CompanyGamePathNode nearest = null;
         float best = float.PositiveInfinity;
-
         foreach (CompanyGamePathNode node in graph.Nodes)
         {
             if (node == null) continue;
+
+            bool validFloor = false;
+            foreach (CompanyGameEmployeeMovement employee in selected)
+            {
+                if (employee != null && employee.Floor == node.Floor)
+                {
+                    validFloor = true;
+                    break;
+                }
+            }
+            if (!validFloor) continue;
+
             float distance = (node.transform.position - world).sqrMagnitude;
             if (distance < best)
             {
