@@ -1,0 +1,11 @@
+{
+  "id":"71e250f4b164ea9b1b272a45ea5c8e958a57fb959a0a21c3d7e6d47c294f8bd1",
+  "command":"DELETE_OBJECT:이한결:1000",
+  "success":true,
+  "message":"Deleted objects matching prefix: 이한결",
+  "exception":"",
+  "createdObjects":[],
+  "deletedObjects":["이한결","이한결","이한결","이한결","이한결","이한결","이한결","이한결","이한결"],
+  "renamedObjects":[],
+  "errors":[]
+}

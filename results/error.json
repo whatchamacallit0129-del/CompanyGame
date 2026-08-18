@@ -1,7 +1,7 @@
 {
   "success": false,
-  "type": "Error",
-  "timestamp": "2026-08-18 18:29:54.367",
-  "message": "[Company Game] FAILED: Duplicate final name in batch: 이한결",
-  "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:59)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
+  "type": "Exception",
+  "timestamp": "2026-08-18 18:46:39.537",
+  "message": "NullReferenceException: Object reference not set to an instance of an object",
+  "stackTrace": "CompanyGameIdentityClassifier.ClassifySceneObjects () (at Assets/Editor/CompanyGameIdentityClassifier.cs:32)\nUnityEditor.EditorApplication.Internal_CallHierarchyHasChanged () (at <da871bb30d6448e2981f366171b14bb9>:0)\n"
 }
