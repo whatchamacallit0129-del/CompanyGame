@@ -9,7 +9,6 @@ using UnityEngine;
 
 public static class CompanyGameCommandAgent
 {
-    private const string NumberRegistryKeyPrefix = "CompanyGame.NextNumber.";
     private static readonly Dictionary<string, Func<CommandRequest, CommandResult>> Handlers = new Dictionary<string, Func<CommandRequest, CommandResult>>(StringComparer.OrdinalIgnoreCase)
     {
         { "CREATE_INTERACTABLE_OBJECT", CreateInteractableObject },
@@ -62,14 +61,8 @@ public static class CompanyGameCommandAgent
             result.Exception = ex.ToString();
             result.Errors.Add(new LogRecord("Exception", ex.Message, ex.StackTrace));
         }
-
         try { WriteResult(id, raw, result); }
-        catch (Exception ex)
-        {
-            Debug.LogError("[Company Game] Failed to write result.json: " + ex);
-            WriteErrorFallback(id, raw, ex);
-        }
-
+        catch (Exception ex) { Debug.LogError("[Company Game] Failed to write result.json: " + ex); WriteErrorFallback(id, raw, ex); }
         SafeDelete(processingPath);
         commandInProgress = false;
         AssetDatabase.Refresh();
@@ -151,25 +144,29 @@ public static class CompanyGameCommandAgent
                 result.CreatedObjects.Add(name);
                 AddIdentityResult(result, go);
             }
-            int highest = 0;
-            foreach (int n in explicitNumbers) if (n > highest) highest = n;
-            int next = GetNextNumberedIndex(baseName);
-            if (next <= highest) SetNextNumber(baseName, highest + 1);
             return result;
         }
         int count;
         if (!int.TryParse(spec, NumberStyles.Integer, CultureInfo.InvariantCulture, out count) || count < 1 || count > 1000) return CommandResult.Failure("Count must be 1-1000, or explicit numbers such as 7,9.");
-        int nextNumber = GetNextNumberedIndex(baseName);
         CommandResult created = CommandResult.SuccessResult("Created " + count + " interactable object(s): " + baseName);
+        HashSet<int> usedThisCommand = new HashSet<int>();
         for (int i = 0; i < count; i++)
         {
-            string name = baseName + " (" + (nextNumber + i) + ")";
+            int number = GetNextAvailableNumber(baseName, usedThisCommand);
+            usedThisCommand.Add(number);
+            string name = baseName + " (" + number + ")";
             GameObject go = CreateSingleInteractable(name, category);
             created.CreatedObjects.Add(name);
             AddIdentityResult(created, go);
         }
-        SetNextNumber(baseName, nextNumber + count);
         return created;
+    }
+
+    private static int GetNextAvailableNumber(string baseName, HashSet<int> reserved)
+    {
+        int number = 1;
+        while (reserved.Contains(number) || FindSceneObjectByExactName(baseName + " (" + number + ")") != null) number++;
+        return number;
     }
 
     private static string ResolveCreationCategory(string baseName)
@@ -184,6 +181,8 @@ public static class CompanyGameCommandAgent
     private static void AddIdentityResult(CommandResult result, GameObject go)
     {
         if (go == null) return;
+        EmployeeId employee = go.GetComponent<EmployeeId>();
+        if (employee != null && !string.IsNullOrEmpty(employee.EmployeeID)) { result.CreatedObjectIds.Add(employee.EmployeeID); return; }
         CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
         if (identity != null && !string.IsNullOrEmpty(identity.ObjectId)) result.CreatedObjectIds.Add(identity.ObjectId);
     }
@@ -192,26 +191,9 @@ public static class CompanyGameCommandAgent
     {
         numbers = new List<int>();
         if (text.IndexOf(',') < 0) return false;
-        foreach (string part in text.Split(','))
-        {
-            int n;
-            if (!int.TryParse(part.Trim(), out n)) return false;
-            numbers.Add(n);
-        }
+        foreach (string part in text.Split(',')) { int n; if (!int.TryParse(part.Trim(), out n)) return false; numbers.Add(n); }
         return numbers.Count > 0;
     }
-
-    private static int GetNextNumberedIndex(string baseName)
-    {
-        string key = NumberRegistryKeyPrefix + baseName;
-        int stored = Math.Max(1, EditorPrefs.GetInt(key, 1));
-        int next = stored;
-        while (FindSceneObjectByExactName(baseName + " (" + next + ")") != null) next++;
-        if (next != stored) EditorPrefs.SetInt(key, next);
-        return next;
-    }
-
-    private static void SetNextNumber(string baseName, int next) { EditorPrefs.SetInt(NumberRegistryKeyPrefix + baseName, Math.Max(1, next)); }
 
     private static GameObject CreateSingleInteractable(string name, string category)
     {
@@ -219,8 +201,16 @@ public static class CompanyGameCommandAgent
         Undo.AddComponent<BoxCollider2D>(go);
         TryAddComponentByName(go, "DraggableObject2D");
         TryAddComponentByName(go, "InteractableObject2D");
-        CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
-        identity.EnsureIdentity(category);
+        if (string.Equals(category, "Employee", StringComparison.OrdinalIgnoreCase))
+        {
+            EmployeeId employeeId = Undo.AddComponent<EmployeeId>(go);
+            employeeId.EnsureId();
+        }
+        else
+        {
+            CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
+            identity.EnsureIdentity(category);
+        }
         Undo.RegisterCreatedObjectUndo(go, "Create Interactable Object");
         EditorUtility.SetDirty(go);
         return go;
@@ -229,9 +219,16 @@ public static class CompanyGameCommandAgent
     private static CommandResult CreateEmptyObject(CommandRequest request)
     {
         string name = string.IsNullOrWhiteSpace(request.Arguments) ? "CompanyObject" : request.Arguments.Trim();
+        string category = ResolveCreationCategory(name);
         GameObject go = new GameObject(name);
-        CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
-        identity.EnsureIdentity(ResolveCreationCategory(name));
+        if (string.Equals(category, "Employee", StringComparison.OrdinalIgnoreCase))
+        {
+            EmployeeId employeeId = Undo.AddComponent<EmployeeId>(go); employeeId.EnsureId();
+        }
+        else
+        {
+            CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go); identity.EnsureIdentity(category);
+        }
         Undo.RegisterCreatedObjectUndo(go, "Create Company Object");
         CommandResult result = CommandResult.SuccessResult("Created object: " + name);
         result.CreatedObjects.Add(name); AddIdentityResult(result, go); return result;
@@ -255,7 +252,10 @@ public static class CompanyGameCommandAgent
 
     private static void AddDeletedResult(CommandResult result, GameObject go)
     {
-        if (go == null) return; result.DeletedObjects.Add(go.name); CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
+        if (go == null) return; result.DeletedObjects.Add(go.name);
+        EmployeeId employee = go.GetComponent<EmployeeId>();
+        if (employee != null && !string.IsNullOrEmpty(employee.EmployeeID)) { result.DeletedObjectIds.Add(employee.EmployeeID); return; }
+        CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
         if (identity != null && !string.IsNullOrEmpty(identity.ObjectId)) result.DeletedObjectIds.Add(identity.ObjectId);
     }
 
@@ -277,67 +277,47 @@ public static class CompanyGameCommandAgent
 
     private static GameObject FindObject(string selector)
     {
-        if (IsIdSelector(selector))
-        {
-            CompanyGameObjectIdentity[] identities = UnityEngine.Object.FindObjectsByType<CompanyGameObjectIdentity>(FindObjectsInactive.Include);
-            foreach (CompanyGameObjectIdentity identity in identities) if (identity != null && string.Equals(identity.ObjectId, selector, StringComparison.OrdinalIgnoreCase)) return identity.gameObject;
-            return null;
-        }
+        EmployeeId[] employees = UnityEngine.Object.FindObjectsByType<EmployeeId>(FindObjectsInactive.Include);
+        foreach (EmployeeId employee in employees) if (employee != null && string.Equals(employee.EmployeeID, selector, StringComparison.OrdinalIgnoreCase)) return employee.gameObject;
+        CompanyGameObjectIdentity[] identities = UnityEngine.Object.FindObjectsByType<CompanyGameObjectIdentity>(FindObjectsInactive.Include);
+        foreach (CompanyGameObjectIdentity identity in identities) if (identity != null && string.Equals(identity.ObjectId, selector, StringComparison.OrdinalIgnoreCase)) return identity.gameObject;
         return FindSceneObjectByExactName(selector);
     }
 
     private static List<GameObject> FindByPrefix(string prefix)
     {
-        List<GameObject> result = new List<GameObject>();
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include);
-        foreach (GameObject go in objects) if (go != null && go.name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) result.Add(go);
-        return result;
+        List<GameObject> result = new List<GameObject>(); GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include);
+        foreach (GameObject go in objects) if (go != null && go.name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) result.Add(go); return result;
     }
 
     private static GameObject FindSceneObjectByExactName(string name)
     {
         GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include);
-        foreach (GameObject go in objects) if (go != null && string.Equals(go.name, name, StringComparison.Ordinal)) return go;
-        return null;
+        foreach (GameObject go in objects) if (go != null && string.Equals(go.name, name, StringComparison.Ordinal)) return go; return null;
     }
 
     private static void TryAddComponentByName(GameObject go, string typeName)
     {
-        Type type = FindType(typeName); if (type != null && typeof(Component).IsAssignableFrom(type))
-        {
-            try { Undo.AddComponent(go, type); } catch (Exception ex) { Debug.LogWarning("[Company Game] Optional component " + typeName + " was not added: " + ex.Message); }
-        }
+        Type type = FindType(typeName); if (type != null && typeof(Component).IsAssignableFrom(type)) try { Undo.AddComponent(go, type); } catch (Exception ex) { Debug.LogWarning("[Company Game] Optional component " + typeName + " was not added: " + ex.Message); }
     }
 
     private static Type FindType(string typeName)
     {
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies()) { Type type = assembly.GetType(typeName); if (type != null) return type; }
-        return null;
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies()) { Type type = assembly.GetType(typeName); if (type != null) return type; } return null;
     }
 
     private static void WriteResult(string id, string raw, CommandResult result)
     {
-        string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-        string resultsDir = Path.Combine(projectRoot, "results");
-        Directory.CreateDirectory(resultsDir);
-        string path = Path.Combine(resultsDir, "result.json");
+        string resultsDir = Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), "results"); Directory.CreateDirectory(resultsDir);
         StringBuilder sb = new StringBuilder(); sb.AppendLine("{");
         sb.AppendLine("  \"id\": \"" + Escape(id) + "\","); sb.AppendLine("  \"command\": \"" + Escape(raw) + "\","); sb.AppendLine("  \"success\": " + (result.Success ? "true" : "false") + ","); sb.AppendLine("  \"message\": \"" + Escape(result.Message) + "\","); sb.AppendLine("  \"exception\": \"" + Escape(result.Exception ?? "") + "\",");
-        WriteStringArray(sb, "createdObjects", result.CreatedObjects, true); WriteStringArray(sb, "createdObjectIds", result.CreatedObjectIds, true); WriteStringArray(sb, "deletedObjects", result.DeletedObjects, true); WriteStringArray(sb, "deletedObjectIds", result.DeletedObjectIds, true); WriteStringArray(sb, "renamedObjects", result.RenamedObjects, false);
-        sb.AppendLine("}"); File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        WriteStringArray(sb, "createdObjects", result.CreatedObjects, true); WriteStringArray(sb, "createdObjectIds", result.CreatedObjectIds, true); WriteStringArray(sb, "deletedObjects", result.DeletedObjects, true); WriteStringArray(sb, "deletedObjectIds", result.DeletedObjectIds, true); WriteStringArray(sb, "renamedObjects", result.RenamedObjects, false); sb.AppendLine("}");
+        File.WriteAllText(Path.Combine(resultsDir, "result.json"), sb.ToString(), Encoding.UTF8);
     }
 
     private static void WriteErrorFallback(string id, string raw, Exception ex)
     {
-        try
-        {
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string resultsDir = Path.Combine(projectRoot, "results"); Directory.CreateDirectory(resultsDir);
-            string path = Path.Combine(resultsDir, "error.json");
-            string json = "{\n  \"id\": \"" + Escape(id) + "\",\n  \"command\": \"" + Escape(raw) + "\",\n  \"success\": false,\n  \"message\": \"Agent reporting failed\",\n  \"exception\": \"" + Escape(ex.ToString()) + "\"\n}";
-            File.WriteAllText(path, json, Encoding.UTF8);
-        }
-        catch { }
+        try { string dir = Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), "results"); Directory.CreateDirectory(dir); File.WriteAllText(Path.Combine(dir, "error.json"), "{\"id\":\"" + Escape(id) + "\",\"command\":\"" + Escape(raw) + "\",\"success\":false,\"message\":\"Agent reporting failed\",\"exception\":\"" + Escape(ex.ToString()) + "\"}", Encoding.UTF8); } catch { }
     }
 
     private static void WriteStringArray(StringBuilder sb, string name, List<string> values, bool commaAfter)
