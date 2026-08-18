@@ -16,10 +16,12 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
     private Vector3 destination;
     private int pathIndex;
     private bool moving;
+    private float currentSpeed;
 
     public bool IsMoving => moving;
     public Vector3 Destination => destination;
     public float MoveSpeed => moveSpeedOverride > 0f ? moveSpeedOverride : (settings != null ? settings.MoveSpeed : 2f);
+    public float CurrentSpeed => currentSpeed;
     public int Floor => floor;
     public CompanyGameEmployeeMovementSettings Settings => settings;
     public CompanyGamePath CurrentPath => currentPath;
@@ -34,10 +36,30 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
 
     private void Update()
     {
-        if (!moving || currentPath == null || !currentPath.IsValid) return;
+        if (!moving || currentPath == null || !currentPath.IsValid)
+        {
+            currentSpeed = 0f;
+            return;
+        }
 
         float deltaTime = settings != null && settings.UseUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
-        float remaining = deltaTime * MoveSpeed;
+        float targetSpeed = MoveSpeed;
+        float acceleration = settings != null ? settings.Acceleration : 8f;
+        float deceleration = settings != null ? settings.Deceleration : 12f;
+
+        bool approachingFinalDestination = pathIndex >= currentPath.Nodes.Count - 1;
+        float distanceToTarget = CurrentTargetNode != null
+            ? Vector3.Distance(transform.position, CurrentTargetNode.transform.position)
+            : Vector3.Distance(transform.position, destination);
+
+        float slowdownDistance = Mathf.Max(0.15f, targetSpeed * targetSpeed / (2f * deceleration));
+        if (approachingFinalDestination && distanceToTarget < slowdownDistance)
+            targetSpeed *= Mathf.Clamp01(distanceToTarget / slowdownDistance);
+
+        float rate = targetSpeed > currentSpeed ? acceleration : deceleration;
+        currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, rate * deltaTime);
+
+        float remaining = deltaTime * currentSpeed;
         float nodeArrivalDistance = settings != null ? settings.NodeArrivalDistance : 0.06f;
         float destinationArrivalDistance = settings != null ? settings.DestinationArrivalDistance : 0.06f;
 
@@ -70,6 +92,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
                 moving = false;
                 currentPath = null;
                 pathIndex = 0;
+                currentSpeed = 0f;
             }
         }
     }
@@ -91,6 +114,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
                     Vector3.Distance(transform.position, path.Nodes[0].transform.position) <= (settings != null ? settings.NodeArrivalDistance : 0.06f)
             ? 1
             : 0;
+        currentSpeed = 0f;
         moving = true;
         return true;
     }
@@ -100,6 +124,7 @@ public sealed class CompanyGameEmployeeMovement : MonoBehaviour
         moving = false;
         currentPath = null;
         pathIndex = 0;
+        currentSpeed = 0f;
     }
 
     public void SetFloor(int value) => floor = value;
