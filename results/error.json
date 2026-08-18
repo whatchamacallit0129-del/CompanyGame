@@ -1,7 +1,7 @@
 {
   "success": false,
   "type": "Error",
-  "timestamp": "2026-08-18 17:13:42.571",
+  "timestamp": "2026-08-18 17:24:38.796",
   "message": "[Company Game] Hierarchy sort failed: System.ArgumentNullException: Value cannot be null.\r\nParameter name: key\r\n  at System.Collections.Generic.Dictionary`2[TKey,TValue].FindEntry (TKey key) [0x00008] in <816f70bc2a9c4332b0bd119906a8d40e>:0 \r\n  at System.Collections.Generic.Dictionary`2[TKey,TValue].TryGetValue (TKey key, TValue& value) [0x00000] in <816f70bc2a9c4332b0bd119906a8d40e>:0 \r\n  at CompanyGameHierarchySorter.SortHierarchy () [0x00083] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameHierarchySorter.cs:58 ",
   "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameHierarchySorter:SortHierarchy () (at Assets/Editor/CompanyGameHierarchySorter.cs:89)\nCompanyGameHierarchySorter:SortHierarchyNow () (at Assets/Editor/CompanyGameHierarchySorter.cs:29)\n"
 }
