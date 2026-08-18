@@ -16,6 +16,7 @@ public sealed class CompanyGameNavigationService
 
     public CompanyGamePath FindPath(Vector3 startPosition, Vector3 goalPosition, int floor, float nodeSnapDistance)
     {
+        if (graph == null) return new CompanyGamePath(null);
         graph.Refresh();
         CompanyGamePathNode start = graph.FindNearest(startPosition, floor, nodeSnapDistance);
         CompanyGamePathNode goal = graph.FindNearest(goalPosition, floor, nodeSnapDistance);
@@ -40,9 +41,11 @@ public sealed class CompanyGameNavigationService
 
             foreach (CompanyGamePathNode next in current.Connections)
             {
-                if (next == null) continue;
+                if (next == null || next.Floor != start.Floor) continue;
 
-                float candidate = distance[current] + next.MovementCost;
+                float edgeDistance = Vector3.Distance(current.transform.position, next.transform.position);
+                float candidate = distance[current] + Mathf.Max(0.01f, edgeDistance) * next.MovementCost;
+
                 if (!distance.TryGetValue(next, out float known) || candidate < known)
                 {
                     distance[next] = candidate;
@@ -56,11 +59,13 @@ public sealed class CompanyGameNavigationService
 
         var result = new List<CompanyGamePathNode> { goal };
         CompanyGamePathNode cursor = goal;
+        int safety = 0;
         while (previous.TryGetValue(cursor, out CompanyGamePathNode parent))
         {
             cursor = parent;
             result.Add(cursor);
             if (cursor == start) break;
+            if (++safety > 10000) return new CompanyGamePath(null);
         }
 
         if (result[result.Count - 1] != start) return new CompanyGamePath(null);
