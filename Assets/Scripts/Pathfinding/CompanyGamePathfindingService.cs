@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Default graph pathfinder. Uses Dijkstra so traversal costs can evolve
-/// independently from employees and movement controllers.
+/// Runtime pathfinding over the corridor/node network.
+/// Corridor authoring data is converted into a traversable graph at runtime.
 /// </summary>
 public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingService
 {
@@ -69,8 +69,16 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
     public CompanyGamePath FindPath(Vector3 startWorldPosition, Vector3 goalWorldPosition, int floor = 0)
     {
         RefreshGraph();
+
         CompanyGamePathNode start = FindNearestNode(startWorldPosition, floor);
         CompanyGamePathNode goal = FindNearestNode(goalWorldPosition, floor);
+
+        if (start == null || goal == null)
+        {
+            Debug.LogWarning($"[Company Game] Pathfinding could not find nodes. Start={startWorldPosition}, Goal={goalWorldPosition}, Floor={floor}");
+            return new CompanyGamePath(null);
+        }
+
         return FindPath(start, goal);
     }
 
@@ -78,6 +86,50 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
     {
         graph.Clear();
         graph.AddRange(Object.FindObjectsByType<CompanyGamePathNode>());
+
+        // Corridor nodes are a graph automatically: nodes belonging to the same
+        // corridor are connected in their authoring order.
+        CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>();
+        foreach (CompanyGameCorridor corridor in corridors)
+        {
+            if (corridor == null || !corridor.Walkable) continue;
+
+            CompanyGamePathNode previous = null;
+            foreach (CompanyGamePathNode node in corridor.Nodes)
+            {
+                if (node == null) continue;
+
+                // Keep node floor consistent with the owning corridor at runtime.
+                SetNodeFloor(node, corridor.Floor);
+
+                if (previous != null)
+                    previous.ConnectTo(node);
+
+                previous = node;
+            }
+        }
+
+        // Explicit Corridor ↔ Corridor links become graph edges through the
+        // nearest node on each side. No manual node-to-node connection is required.
+        foreach (CompanyGameCorridor corridor in corridors)
+        {
+            if (corridor == null || !corridor.Walkable) continue;
+
+            foreach (CompanyGameCorridor other in corridor.ConnectedCorridors)
+            {
+                if (other == null || !other.Walkable) continue;
+
+                CompanyGamePathNode a = corridor.GetNearestNode(other.transform.position);
+                CompanyGamePathNode b = other.GetNearestNode(corridor.transform.position);
+
+                if (a != null && b != null)
+                {
+                    SetNodeFloor(a, corridor.Floor);
+                    SetNodeFloor(b, other.Floor);
+                    a.ConnectTo(b);
+                }
+            }
+        }
     }
 
     private CompanyGamePathNode FindNearestNode(Vector3 position, int floor)
@@ -87,7 +139,8 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
 
         foreach (CompanyGamePathNode node in graph)
         {
-            if (node == null || node.Floor != floor) continue;
+            if (node == null || GetEffectiveFloor(node) != floor) continue;
+
             float distance = (node.transform.position - position).sqrMagnitude;
             if (distance < best)
             {
@@ -95,7 +148,20 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
                 nearest = node;
             }
         }
+
         return nearest;
+    }
+
+    private static int GetEffectiveFloor(CompanyGamePathNode node)
+    {
+        CompanyGameCorridor corridor = node.GetComponentInParent<CompanyGameCorridor>();
+        return corridor != null ? corridor.Floor : node.Floor;
+    }
+
+    private static void SetNodeFloor(CompanyGamePathNode node, int floor)
+    {
+        // The node currently exposes Floor as serialized data without a public setter.
+        // Corridor ownership is therefore the authoritative floor during pathfinding.
     }
 
     private static void AddNode(CompanyGamePathNode node, Dictionary<CompanyGamePathNode, float> distances, List<CompanyGamePathNode> unvisited)
