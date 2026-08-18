@@ -23,11 +23,24 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
         {
             if (string.IsNullOrEmpty(objectType) || objectType.Equals("Object", StringComparison.OrdinalIgnoreCase))
                 objectType = normalized;
+            EnsureSpecializedComponent(normalized);
             return;
         }
 
         objectType = normalized;
         objectId = GenerateId(normalized);
+        EnsureSpecializedComponent(normalized);
+    }
+
+    private void EnsureSpecializedComponent(string normalized)
+    {
+        if (!normalized.Equals("Employee", StringComparison.OrdinalIgnoreCase)) return;
+
+        EmployeeId employeeId = GetComponent<EmployeeId>();
+        if (employeeId == null)
+            employeeId = gameObject.AddComponent<EmployeeId>();
+
+        employeeId.SetId(objectId);
     }
 
     private static string NormalizeType(string type)
