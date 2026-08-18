@@ -5,7 +5,10 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Captures Unity Editor errors and exceptions and writes them to results/error.json.
+/// Captures Unity Editor log errors/exceptions/asserts and writes an AI-readable
+/// report to results/error.json. Also captures unhandled log messages emitted from
+/// worker threads. Compilation errors are additionally collected through the
+/// Unity Console log pipeline when Unity emits them as log messages.
 /// </summary>
 [InitializeOnLoad]
 public static class CompanyGameErrorReporter
@@ -16,6 +19,7 @@ public static class CompanyGameErrorReporter
     private static bool writing;
     private static string lastSignature = string.Empty;
     private static double lastWriteTime;
+    private static int queuedWrites;
 
     static CompanyGameErrorReporter()
     {
@@ -34,23 +38,32 @@ public static class CompanyGameErrorReporter
             return;
 
         initialized = true;
-        Application.logMessageReceivedThreaded -= OnLogMessage;
-        Application.logMessageReceivedThreaded += OnLogMessage;
+        Application.logMessageReceived -= OnLogMessage;
+        Application.logMessageReceivedThreaded -= OnLogMessageThreaded;
+        Application.logMessageReceived += OnLogMessage;
+        Application.logMessageReceivedThreaded += OnLogMessageThreaded;
         Debug.Log("[Company Game] Error Reporter initialized.");
     }
 
     [MenuItem("Tools/Company Game/Test Error Reporter")]
     private static void TestErrorReporter()
     {
-        WriteError(
-            "CompanyGameErrorReporter test error. This error was intentionally generated to verify error capture.",
+        Capture("CompanyGameErrorReporter test error.",
             "Test Error Reporter menu command -> CompanyGameErrorReporter.TestErrorReporter()",
             LogType.Error);
-
-        Debug.LogError("[Company Game] TEST ERROR: Error Reporter capture test.");
     }
 
     private static void OnLogMessage(string condition, string stackTrace, LogType type)
+    {
+        HandleLog(condition, stackTrace, type);
+    }
+
+    private static void OnLogMessageThreaded(string condition, string stackTrace, LogType type)
+    {
+        HandleLog(condition, stackTrace, type);
+    }
+
+    private static void HandleLog(string condition, string stackTrace, LogType type)
     {
         if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert)
             return;
@@ -60,12 +73,26 @@ public static class CompanyGameErrorReporter
         string signature = type + "\n" + safeCondition + "\n" + safeStackTrace;
         double now = EditorApplication.timeSinceStartup;
 
+        // Prevent the same Unity error from flooding error.json repeatedly.
         if (signature == lastSignature && now - lastWriteTime < 2.0)
             return;
 
         lastSignature = signature;
         lastWriteTime = now;
-        EditorApplication.delayCall += () => WriteError(safeCondition, safeStackTrace, type);
+
+        // Never touch UnityEditor APIs or files directly from a worker thread.
+        // Queue the actual write onto Unity's main editor thread.
+        queuedWrites++;
+        EditorApplication.delayCall += () =>
+        {
+            queuedWrites = Math.Max(0, queuedWrites - 1);
+            Capture(safeCondition, safeStackTrace, type);
+        };
+    }
+
+    private static void Capture(string condition, string stackTrace, LogType type)
+    {
+        WriteError(condition, stackTrace, type);
     }
 
     private static void WriteError(string condition, string stackTrace, LogType type)
@@ -81,7 +108,6 @@ public static class CompanyGameErrorReporter
             if (string.IsNullOrEmpty(projectRoot))
                 throw new InvalidOperationException("Could not determine Unity project root.");
 
-            // Always store AI-readable error results under the repository's results folder.
             string resultsPath = Path.Combine(projectRoot, ResultsDirectory);
             Directory.CreateDirectory(resultsPath);
 
@@ -96,7 +122,16 @@ public static class CompanyGameErrorReporter
                           "  \"stackTrace\": \"" + Escape(stackTrace) + "\"\n" +
                           "}\n";
 
-            File.WriteAllText(filePath, json, new UTF8Encoding(false));
+            // Atomic replacement reduces the chance of auto-push reading a partially
+            // written JSON file.
+            string tempPath = filePath + ".tmp";
+            File.WriteAllText(tempPath, json, new UTF8Encoding(false));
+
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+
+            File.Move(tempPath, filePath);
+
             AssetDatabase.Refresh();
             Debug.Log("[Company Game] Error captured: " + filePath);
         }
