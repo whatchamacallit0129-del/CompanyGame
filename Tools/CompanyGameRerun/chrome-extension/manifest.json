@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "CompanyGame Rerun",
+  "version": "0.1.0",
+  "description": "Controlled Chrome Side Panel loop for continuing a ChatGPT development task.",
+  "permissions": ["storage", "tabs", "sidePanel", "scripting"],
+  "host_permissions": ["https://chatgpt.com/*", "https://www.chatgpt.com/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "CompanyGame Rerun"},
+  "side_panel": {"default_path": "sidepanel.html"},
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*", "https://www.chatgpt.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}
