@@ -1,13 +1,13 @@
 function findComposer() {
-  const selectors = [
-    '#prompt-textarea',
-    'div[contenteditable="true"][data-placeholder]',
-    'div[contenteditable="true"][role="textbox"]',
-    'textarea[placeholder*="Message"]',
-    'textarea[data-testid*="textbox"]',
-    'textarea'
-  ];
-  return selectors.map(selector => document.querySelector(selector)).find(Boolean);
+  const candidates = [
+    document.querySelector('#prompt-textarea'),
+    document.querySelector('div[contenteditable="true"][role="textbox"]'),
+    document.querySelector('div[contenteditable="true"][data-placeholder]'),
+    document.querySelector('textarea[placeholder*="Message"]'),
+    document.querySelector('textarea[data-testid*="textbox"]'),
+    document.querySelector('textarea')
+  ].filter(Boolean);
+  return candidates.find(el => !el.disabled && el.getAttribute('aria-disabled') !== 'true') || null;
 }
 
 function findSendButton() {
@@ -18,210 +18,182 @@ function findSendButton() {
     'button[aria-label*="Send"]',
     'button[aria-label*="보내기"]'
   ];
-  return selectors.map(selector => document.querySelector(selector)).find(Boolean);
+  return selectors.map(s => document.querySelector(s)).find(Boolean) || null;
 }
 
-function setTextareaValue(textarea, text) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  if (!setter) throw new Error("ChatGPT textarea value setter를 찾지 못했습니다.");
-  setter.call(textarea, text);
-  textarea.dispatchEvent(new InputEvent("input", {
-    bubbles: true,
-    cancelable: true,
-    inputType: "insertText",
-    data: text
-  }));
-  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+function composerText(el) {
+  if (!el) return '';
+  if (el instanceof HTMLTextAreaElement) return el.value || '';
+  return (el.innerText || el.textContent || '').trim();
 }
 
-function setContentEditableValue(element, text) {
-  element.focus();
+function setTextareaValue(el, text) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+  if (!setter) throw new Error('INPUT_SETTER_FAILED: textarea value setter가 없습니다.');
+  setter.call(el, text);
+  el.dispatchEvent(new InputEvent('input', { bubbles:true, inputType:'insertText', data:text }));
+  el.dispatchEvent(new Event('change', { bubbles:true }));
+}
 
-  // React/ProseMirror 계열 입력창에서는 DOM만 바꾸면 내부 상태가 갱신되지
-  // 않을 수 있다. execCommand('insertText')를 먼저 사용하고, 실패할 경우
-  // Selection + InputEvent 방식으로 fallback한다.
+function setContentEditableValue(el, text) {
+  el.focus();
   const selection = window.getSelection();
   const range = document.createRange();
-  range.selectNodeContents(element);
+  range.selectNodeContents(el);
   selection.removeAllRanges();
   selection.addRange(range);
 
-  let inserted = false;
-  try {
-    inserted = document.execCommand("insertText", false, text);
-  } catch (_) {}
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, text); } catch (_) {}
 
-  if (!inserted) {
-    element.replaceChildren();
-    const paragraph = document.createElement("p");
-    paragraph.textContent = text;
-    element.appendChild(paragraph);
-    element.dispatchEvent(new InputEvent("input", {
-      bubbles: true,
-      cancelable: true,
-      inputType: "insertText",
-      data: text
-    }));
+  if (!ok || !composerText(el)) {
+    el.replaceChildren();
+    const p = document.createElement('p');
+    p.textContent = text;
+    el.appendChild(p);
   }
 
-  // 일부 버전의 ChatGPT는 input 이후에도 React 상태 갱신을 위해
-  // beforeinput/input 이벤트를 요구한다.
-  element.dispatchEvent(new Event("change", { bubbles: true }));
+  el.dispatchEvent(new InputEvent('beforeinput', {
+    bubbles:true,
+    cancelable:true,
+    inputType:'insertText',
+    data:text
+  }));
+  el.dispatchEvent(new InputEvent('input', {
+    bubbles:true,
+    cancelable:true,
+    inputType:'insertText',
+    data:text
+  }));
+  el.dispatchEvent(new Event('change', { bubbles:true }));
 }
 
-function setComposerValue(composer, text) {
-  composer.focus();
-  if (composer instanceof HTMLTextAreaElement) {
-    setTextareaValue(composer, text);
-  } else {
-    setContentEditableValue(composer, text);
-  }
+function setComposerValue(el, text) {
+  if (el instanceof HTMLTextAreaElement) setTextareaValue(el, text);
+  else setContentEditableValue(el, text);
 }
 
-async function waitForComposer(timeout = 15000) {
+async function waitForComposer(timeout = 10000) {
   const started = Date.now();
   while (Date.now() - started < timeout) {
     const composer = findComposer();
-    if (composer && !composer.disabled && composer.getAttribute("aria-disabled") !== "true") return composer;
-    await new Promise(resolve => setTimeout(resolve, 250));
+    if (composer) return composer;
+    await new Promise(r => setTimeout(r, 200));
   }
-  throw new Error("ChatGPT 입력창을 찾지 못했습니다. 현재 이 대화 화면이 열려 있는지 확인하세요.");
+  throw new Error('COMPOSER_NOT_FOUND: ChatGPT 입력창을 찾지 못했습니다.');
 }
 
-async function waitForSendButton(timeout = 5000) {
+async function waitForSendButton(timeout = 4000) {
   const started = Date.now();
   while (Date.now() - started < timeout) {
     const button = findSendButton();
-    if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") return button;
-    await new Promise(resolve => setTimeout(resolve, 150));
+    if (button && !button.disabled && button.getAttribute('aria-disabled') !== 'true') return button;
+    await new Promise(r => setTimeout(r, 100));
   }
   return null;
 }
 
-function getLatestAssistantText() {
-  const nodes = document.querySelectorAll('[data-message-author-role="assistant"]');
-  if (!nodes.length) return "";
-  return nodes[nodes.length - 1].innerText?.trim() || "";
+function submitByEnter(el) {
+  el.focus();
+  const options = { key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true };
+  el.dispatchEvent(new KeyboardEvent('keydown', options));
+  el.dispatchEvent(new KeyboardEvent('keypress', options));
+  el.dispatchEvent(new KeyboardEvent('keyup', options));
 }
 
-let responseWaiter = null;
-let responseObserver = null;
-let observerStarted = false;
-let responseGeneration = 0;
-
-function startAssistantObserver() {
-  if (observerStarted) return;
-  observerStarted = true;
-  responseObserver = new MutationObserver(() => {
-    if (!responseWaiter) return;
-    const text = getLatestAssistantText();
-    if (!text || text === responseWaiter.baseline) return;
-    responseWaiter.latest = text;
-    responseWaiter.lastChangedAt = Date.now();
-  });
-  responseObserver.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  });
-}
-
-function waitForNewAssistantResponse(baseline, timeout = 120000) {
-  startAssistantObserver();
-  responseGeneration += 1;
-  const generation = responseGeneration;
-
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    responseWaiter = { baseline, latest: "", lastChangedAt: 0, generation };
-
-    const poll = () => {
-      if (!responseWaiter || responseWaiter.generation !== generation) return;
-      const latest = getLatestAssistantText();
-      if (latest && latest !== baseline) {
-        responseWaiter.latest = latest;
-        if (!responseWaiter.lastChangedAt) responseWaiter.lastChangedAt = Date.now();
-        if (Date.now() - responseWaiter.lastChangedAt >= 900) {
-          const result = responseWaiter.latest;
-          responseWaiter = null;
-          resolve(result);
-          return;
-        }
-      }
-      if (Date.now() - started >= timeout) {
-        responseWaiter = null;
-        reject(new Error("새 ChatGPT 응답을 기다리는 시간이 초과되었습니다."));
-        return;
-      }
-      setTimeout(poll, 300);
-    };
-    poll();
-  });
-}
-
-async function submitComposer(composer) {
-  // 버튼 클릭이 가장 안정적이다.
-  const send = await waitForSendButton();
-  if (send) {
-    send.click();
-    return;
+async function submitComposer(el) {
+  const button = await waitForSendButton();
+  if (button) {
+    button.click();
+    return 'button';
   }
+  submitByEnter(el);
+  await new Promise(r => setTimeout(r, 500));
+  return 'enter';
+}
 
-  // 버튼이 아직 렌더링되지 않은 경우 실제 KeyboardEvent를 입력창에 전달한다.
-  composer.focus();
-  composer.dispatchEvent(new KeyboardEvent("keydown", {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    which: 13,
-    bubbles: true,
-    cancelable: true
-  }));
+function getAssistantMessages() {
+  return [...document.querySelectorAll('[data-message-author-role="assistant"]')]
+    .map(n => (n.innerText || n.textContent || '').trim())
+    .filter(Boolean);
+}
+
+let observerInstalled = false;
+let lastReportedAssistant = '';
+let lastPromptAt = 0;
+let responseDebounce = null;
+
+function reportAssistantResponse(text) {
+  text = String(text || '').trim();
+  if (!text || text === lastReportedAssistant) return;
+  lastReportedAssistant = text;
+  chrome.runtime.sendMessage({ type:'assistant_response', text, timestamp:Date.now() }).catch(() => {});
+}
+
+function installAssistantObserver() {
+  if (observerInstalled) return;
+  observerInstalled = true;
+
+  const inspect = () => {
+    if (!lastPromptAt) return;
+    const messages = getAssistantMessages();
+    if (!messages.length) return;
+    const latest = messages[messages.length - 1];
+    if (!latest) return;
+
+    // Ignore the assistant message that existed before our automated prompt.
+    if (messages.length === 1 && latest === lastReportedAssistant) return;
+
+    clearTimeout(responseDebounce);
+    responseDebounce = setTimeout(() => {
+      const stable = getAssistantMessages().at(-1) || '';
+      if (stable) reportAssistantResponse(stable);
+    }, 1200);
+  };
+
+  new MutationObserver(inspect).observe(document.documentElement, {
+    childList:true,
+    subtree:true,
+    characterData:true
+  });
+  setInterval(inspect, 1000);
 }
 
 async function sendPrompt(prompt) {
-  if (!prompt.trim()) throw new Error("빈 프롬프트는 전송할 수 없습니다.");
+  prompt = String(prompt || '').trim();
+  if (!prompt) throw new Error('EMPTY_PROMPT: 빈 프롬프트입니다.');
 
-  startAssistantObserver();
-  const baseline = getLatestAssistantText();
   const composer = await waitForComposer();
+  lastPromptAt = Date.now();
+  lastReportedAssistant = getAssistantMessages().at(-1) || lastReportedAssistant;
 
   setComposerValue(composer, prompt);
+  await new Promise(r => setTimeout(r, 500));
 
-  // ChatGPT React 상태가 실제 입력을 인식할 시간을 준다.
-  await new Promise(resolve => setTimeout(resolve, 700));
-
-  const visibleValue = composer instanceof HTMLTextAreaElement
-    ? composer.value
-    : composer.innerText || composer.textContent || "";
-
-  if (!visibleValue.trim()) {
-    throw new Error("ChatGPT 입력창에 프롬프트가 반영되지 않았습니다.");
+  if (!composerText(composer)) {
+    throw new Error('INPUT_NOT_REFLECTED: 입력창에 프롬프트가 반영되지 않았습니다.');
   }
 
-  await submitComposer(composer);
+  const method = await submitComposer(composer);
+  await new Promise(r => setTimeout(r, 700));
 
-  const responseText = await waitForNewAssistantResponse(baseline);
-  chrome.runtime.sendMessage({
-    type: "assistant_response",
-    text: responseText,
-    timestamp: Date.now()
-  }).catch(() => {});
-  return responseText;
+  // Return immediately after successful submission. Response monitoring is independent
+  // so the background worker never blocks waiting for a content-script promise.
+  return { method, composer:'ok' };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "ping") {
-    sendResponse({ ok: true, ready: true });
+  if (message?.type === 'ping') {
+    sendResponse({ ok:true, ready:true, composerFound:!!findComposer(), sendButtonFound:!!findSendButton() });
     return;
   }
 
-  if (message?.type === "send_prompt") {
-    sendPrompt(String(message.prompt || ""))
-      .then(() => sendResponse({ ok: true }))
-      .catch(error => sendResponse({ ok: false, error: error?.message || String(error) }));
+  if (message?.type === 'send_prompt') {
+    sendPrompt(message.prompt)
+      .then(info => sendResponse({ ok:true, ...info }))
+      .catch(error => sendResponse({ ok:false, error:error?.message || String(error) }));
     return true;
   }
 });
 
-startAssistantObserver();
+installAssistantObserver();
