@@ -138,7 +138,6 @@ public static class CompanyGameCommandAgent
         public LogRecord(string type, string message, string stackTrace) { Type = type; Message = message; StackTrace = stackTrace; }
     }
 
-    // CREATE_INTERACTABLE_OBJECT:name[:count] where count means ADD this many.
     private static CommandResult CreateInteractableObject(CommandRequest request)
     {
         string[] values = request.Arguments.Split(':');
@@ -170,7 +169,8 @@ public static class CompanyGameCommandAgent
         return result;
     }
 
-    // DELETE_OBJECT:name[:count]. With count, delete name (if present) and/or numbered variants until count are deleted.
+    // DELETE_OBJECT:name[:count]
+    // With count, find the exact base name and numbered variants using the name prefix.
     private static CommandResult DeleteObjectByName(CommandRequest request)
     {
         string[] values = request.Arguments.Split(':');
@@ -179,31 +179,62 @@ public static class CompanyGameCommandAgent
         int count = ParseCount(values, 1);
         if (count < 1 || count > 1000) return CommandResult.Failure("DELETE_OBJECT count must be between 1 and 1000.");
 
-        CommandResult result = CommandResult.SuccessResult("Deleted " + count + " object(s): " + baseName);
-        int deleted = 0;
-        GameObject exact = GameObject.Find(baseName);
-        if (exact != null && deleted < count)
-        {
-            string name = exact.name;
-            Undo.DestroyObjectImmediate(exact);
-            result.DeletedObjects.Add(name);
-            deleted++;
-        }
+        List<GameObject> matches = FindObjectsByPrefix(baseName);
+        if (matches.Count == 0) return CommandResult.Failure("No matching objects found: " + baseName);
 
-        for (int index = 1; deleted < count && index <= 1000; index++)
+        matches.Sort((a, b) => CompareObjectNames(a.name, b.name, baseName));
+        int deleteCount = Math.Min(count, matches.Count);
+        CommandResult result = CommandResult.SuccessResult(string.Empty);
+
+        for (int i = 0; i < deleteCount; i++)
         {
-            GameObject target = GameObject.Find(baseName + " (" + index + ")");
+            GameObject target = matches[i];
             if (target == null) continue;
             string name = target.name;
             Undo.DestroyObjectImmediate(target);
             result.DeletedObjects.Add(name);
-            deleted++;
         }
 
-        if (deleted == 0) return CommandResult.Failure("No matching objects found: " + baseName);
-        result.Message = "Deleted " + deleted + " object(s): " + baseName;
-        if (deleted < count) result.Message += " (requested " + count + ")";
+        if (result.DeletedObjects.Count == 0)
+            return CommandResult.Failure("No matching objects could be deleted: " + baseName);
+
+        result.Message = "Deleted " + result.DeletedObjects.Count + " object(s) matching prefix: " + baseName;
+        if (result.DeletedObjects.Count < count) result.Message += " (requested " + count + ")";
         return result;
+    }
+
+    private static List<GameObject> FindObjectsByPrefix(string prefix)
+    {
+        GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+        List<GameObject> matches = new List<GameObject>();
+        foreach (GameObject go in allObjects)
+        {
+            if (go == null || EditorUtility.IsPersistent(go) || !go.scene.IsValid()) continue;
+            if (go.name.Equals(prefix, StringComparison.Ordinal) || go.name.StartsWith(prefix + " (", StringComparison.Ordinal))
+                matches.Add(go);
+        }
+        return matches;
+    }
+
+    private static int CompareObjectNames(string a, string b, string baseName)
+    {
+        if (a.Equals(baseName, StringComparison.Ordinal)) return -1;
+        if (b.Equals(baseName, StringComparison.Ordinal)) return 1;
+        int ai = ExtractNumber(a, baseName);
+        int bi = ExtractNumber(b, baseName);
+        if (ai >= 0 && bi >= 0) return ai.CompareTo(bi);
+        if (ai >= 0) return -1;
+        if (bi >= 0) return 1;
+        return string.CompareOrdinal(a, b);
+    }
+
+    private static int ExtractNumber(string name, string baseName)
+    {
+        string prefix = baseName + " (";
+        const string suffix = ")";
+        if (!name.StartsWith(prefix, StringComparison.Ordinal) || !name.EndsWith(suffix, StringComparison.Ordinal)) return -1;
+        string number = name.Substring(prefix.Length, name.Length - prefix.Length - suffix.Length);
+        return int.TryParse(number, out int value) ? value : -1;
     }
 
     private static int ParseCount(string[] values, int fallback)
@@ -339,20 +370,32 @@ public static class CompanyGameCommandAgent
     private static void WriteResult(string projectPath,string command,CommandResult result)
     {
         string path=Path.Combine(projectPath,ResultFileName);
-        string created=QuoteList(result.CreatedObjects);string deleted=QuoteList(result.DeletedObjects);string errors=QuoteErrors(result.Errors);
         string json="{\n"+
             "  \"command\": \""+EscapeJson(command)+"\",\n"+
             "  \"success\": "+result.Success.ToString().ToLowerInvariant()+",\n"+
             "  \"message\": \""+EscapeJson(result.Message)+"\",\n"+
             "  \"exception\": \""+EscapeJson(result.Exception)+"\",\n"+
-            "  \"createdObjects\": ["+created+"],\n"+
-            "  \"deletedObjects\": ["+deleted+"],\n"+
-            "  \"errors\": ["+errors+"]\n"+
+            "  \"createdObjects\": ["+QuoteList(result.CreatedObjects)+"],\n"+
+            "  \"deletedObjects\": ["+QuoteList(result.DeletedObjects)+"],\n"+
+            "  \"errors\": ["+QuoteErrors(result.Errors)+"]\n"+
             "}";
         File.WriteAllText(path,json);
     }
 
-    private static string QuoteList(List<string> values){List<string> q=new List<string>();foreach(string v in values)q.Add("\""+EscapeJson(v)+"\"");return string.Join(",",q.ToArray());}
-    private static string QuoteErrors(List<LogRecord> values){List<string> q=new List<string>();foreach(LogRecord e in values)q.Add("{\"type\":\""+EscapeJson(e.Type)+"\",\"message\":\""+EscapeJson(e.Message)+"\",\"stackTrace\":\""+EscapeJson(e.StackTrace)+"\"}");return string.Join(",",q.ToArray());}
-    private static string EscapeJson(string value)=>string.IsNullOrEmpty(value)?string.Empty:value.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\r","\\r").Replace("\n","\\n");
+    private static string QuoteList(List<string> values)
+    {
+        List<string> quoted=new List<string>();foreach(string value in values)quoted.Add("\""+EscapeJson(value)+"\"");return string.Join(",",quoted.ToArray());
+    }
+
+    private static string QuoteErrors(List<LogRecord> values)
+    {
+        List<string> quoted=new List<string>();
+        foreach(LogRecord value in values)quoted.Add("{\"type\":\""+EscapeJson(value.Type)+"\",\"message\":\""+EscapeJson(value.Message)+"\",\"stackTrace\":\""+EscapeJson(value.StackTrace)+"\"}");
+        return string.Join(",",quoted.ToArray());
+    }
+
+    private static string EscapeJson(string value)
+    {
+        return (value??string.Empty).Replace("\\","\\\\").Replace("\"","\\\"").Replace("\r","\\r").Replace("\n","\\n");
+    }
 }
