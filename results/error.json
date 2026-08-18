@@ -1,7 +1,7 @@
 {
   "success": false,
   "type": "Error",
-  "timestamp": "2026-08-18 17:50:51.498",
+  "timestamp": "2026-08-18 18:04:02.337",
   "message": "[Company Game] FAILED: Unity reported errors while executing the command.",
-  "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:97)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
+  "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:98)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
 }
