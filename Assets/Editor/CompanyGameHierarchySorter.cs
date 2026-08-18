@@ -38,7 +38,7 @@ public static class CompanyGameHierarchySorter
         try
         {
             Transform[] all = Resources.FindObjectsOfTypeAll<Transform>();
-            Dictionary<Transform, List<Transform>> groups = new Dictionary<Transform, List<Transform>>();
+            Dictionary<int, List<Transform>> groups = new Dictionary<int, List<Transform>>();
 
             foreach (Transform current in all)
             {
@@ -53,18 +53,21 @@ public static class CompanyGameHierarchySorter
                 if (!match.Success)
                     continue;
 
-                Transform parent = current.parent;
+                // Transform.parent can legitimately be null for a root object.
+                // Use the instance ID as a stable, non-null grouping key.
+                int parentId = current.parent != null ? current.parent.GetInstanceID() : 0;
+
                 List<Transform> list;
-                if (!groups.TryGetValue(parent, out list))
+                if (!groups.TryGetValue(parentId, out list))
                 {
                     list = new List<Transform>();
-                    groups.Add(parent, list);
+                    groups.Add(parentId, list);
                 }
 
                 list.Add(current);
             }
 
-            foreach (KeyValuePair<Transform, List<Transform>> pair in groups)
+            foreach (KeyValuePair<int, List<Transform>> pair in groups)
             {
                 List<Transform> list = pair.Value;
                 if (list == null || list.Count < 2)
@@ -72,15 +75,28 @@ public static class CompanyGameHierarchySorter
 
                 list.Sort(CompareTransforms);
 
-                // Move from the end toward the beginning. This avoids sibling-index
-                // shifts changing the destination of objects that are still pending.
-                for (int i = list.Count - 1; i >= 0; i--)
+                // All objects in a group share the same parent. Rebuild their
+                // sibling order directly from the sorted list.
+                int firstIndex = int.MaxValue;
+                foreach (Transform item in list)
+                {
+                    if (item == null)
+                        continue;
+
+                    firstIndex = Math.Min(firstIndex, item.GetSiblingIndex());
+                }
+
+                if (firstIndex == int.MaxValue)
+                    continue;
+
+                for (int i = 0; i < list.Count; i++)
                 {
                     Transform item = list[i];
                     if (item == null)
                         continue;
 
-                    item.SetSiblingIndex(GetTargetSiblingIndex(item, list, i));
+                    int targetIndex = Math.Min(firstIndex + i, item.parent != null ? item.parent.childCount - 1 : int.MaxValue);
+                    item.SetSiblingIndex(targetIndex);
                 }
             }
         }
@@ -92,25 +108,6 @@ public static class CompanyGameHierarchySorter
         {
             sorting = false;
         }
-    }
-
-    private static int GetTargetSiblingIndex(Transform item, List<Transform> sorted, int sortedIndex)
-    {
-        int firstIndex = int.MaxValue;
-
-        for (int i = 0; i < sorted.Count; i++)
-        {
-            Transform candidate = sorted[i];
-            if (candidate == null)
-                continue;
-
-            firstIndex = Math.Min(firstIndex, candidate.GetSiblingIndex());
-        }
-
-        if (firstIndex == int.MaxValue)
-            return item.GetSiblingIndex();
-
-        return firstIndex + sortedIndex;
     }
 
     private static int CompareTransforms(Transform a, Transform b)
