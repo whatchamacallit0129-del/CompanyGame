@@ -6,7 +6,6 @@ using UnityEngine;
 
 /// <summary>
 /// Captures Unity Editor errors and exceptions and writes them to results/error.json.
-/// Includes a menu command that verifies the reporter itself is alive.
 /// </summary>
 [InitializeOnLoad]
 public static class CompanyGameErrorReporter
@@ -43,7 +42,6 @@ public static class CompanyGameErrorReporter
     [MenuItem("Tools/Company Game/Test Error Reporter")]
     private static void TestErrorReporter()
     {
-        // Write a deterministic diagnostic before emitting the intentional error.
         WriteError(
             "CompanyGameErrorReporter test error. This error was intentionally generated to verify error capture.",
             "Test Error Reporter menu command -> CompanyGameErrorReporter.TestErrorReporter()",
@@ -67,7 +65,6 @@ public static class CompanyGameErrorReporter
 
         lastSignature = signature;
         lastWriteTime = now;
-
         EditorApplication.delayCall += () => WriteError(safeCondition, safeStackTrace, type);
     }
 
@@ -84,6 +81,7 @@ public static class CompanyGameErrorReporter
             if (string.IsNullOrEmpty(projectRoot))
                 throw new InvalidOperationException("Could not determine Unity project root.");
 
+            // Always store AI-readable error results under the repository's results folder.
             string resultsPath = Path.Combine(projectRoot, ResultsDirectory);
             Directory.CreateDirectory(resultsPath);
 
