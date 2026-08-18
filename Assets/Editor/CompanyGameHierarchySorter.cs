@@ -5,10 +5,8 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Automatically keeps numbered Company Game objects in natural numeric order
-/// inside the Unity Hierarchy. For example: 직원 (1), 직원 (2), ... 직원 (15).
-/// Only objects with the pattern "Name (number)" are reordered, so unrelated
-/// objects and intentional hierarchy groups are left alone.
+/// Keeps numbered Company Game objects in natural numeric order in the Unity Hierarchy.
+/// Example: 직원 (1), 직원 (2), ... 직원 (15).
 /// </summary>
 [InitializeOnLoad]
 public static class CompanyGameHierarchySorter
@@ -22,12 +20,24 @@ public static class CompanyGameHierarchySorter
     {
         EditorApplication.hierarchyChanged -= SortHierarchy;
         EditorApplication.hierarchyChanged += SortHierarchy;
+
+        // Sort existing objects after Unity finishes loading the editor/project.
         EditorApplication.delayCall += SortHierarchy;
+    }
+
+    /// <summary>
+    /// Manually sort all currently loaded scene objects.
+    /// </summary>
+    [MenuItem("Tools/Company Game/Sort Hierarchy Now")]
+    public static void SortHierarchyNow()
+    {
+        SortHierarchy();
     }
 
     private static void SortHierarchy()
     {
-        if (sorting) return;
+        if (sorting)
+            return;
 
         sorting = true;
         try
@@ -40,30 +50,43 @@ public static class CompanyGameHierarchySorter
                 if (current == null || EditorUtility.IsPersistent(current) || !current.gameObject.scene.IsValid())
                     continue;
 
-                Match match = NumberedName.Match(current.name);
-                if (!match.Success) continue;
+                if (!NumberedName.IsMatch(current.name))
+                    continue;
 
                 Transform parent = current.parent;
-                List<Transform> list;
-                if (!groups.TryGetValue(parent, out list))
+                if (!groups.TryGetValue(parent, out List<Transform> list))
                 {
                     list = new List<Transform>();
                     groups[parent] = list;
                 }
+
                 list.Add(current);
             }
 
             foreach (KeyValuePair<Transform, List<Transform>> pair in groups)
             {
                 List<Transform> list = pair.Value;
+                if (list.Count < 2)
+                    continue;
+
                 list.Sort(CompareTransforms);
 
-                int targetIndex = FindFirstRelevantIndex(pair.Key, list);
-                for (int i = 0; i < list.Count; i++)
+                // Move from the end toward the beginning so changing sibling indices
+                // cannot disturb the position we are about to assign.
+                int firstIndex = int.MaxValue;
+                foreach (Transform item in list)
+                    firstIndex = Math.Min(firstIndex, item.GetSiblingIndex());
+
+                if (firstIndex == int.MaxValue)
+                    firstIndex = 0;
+
+                for (int i = list.Count - 1; i >= 0; i--)
                 {
                     Transform item = list[i];
-                    if (item.GetSiblingIndex() != targetIndex + i)
-                        item.SetSiblingIndex(targetIndex + i);
+                    int targetIndex = firstIndex + i;
+
+                    if (item.GetSiblingIndex() != targetIndex)
+                        item.SetSiblingIndex(targetIndex);
                 }
             }
         }
@@ -77,17 +100,6 @@ public static class CompanyGameHierarchySorter
         }
     }
 
-    private static int FindFirstRelevantIndex(Transform parent, List<Transform> sorted)
-    {
-        if (sorted.Count == 0) return 0;
-
-        int first = int.MaxValue;
-        foreach (Transform item in sorted)
-            first = Math.Min(first, item.GetSiblingIndex());
-
-        return first == int.MaxValue ? 0 : first;
-    }
-
     private static int CompareTransforms(Transform a, Transform b)
     {
         Match ma = NumberedName.Match(a.name);
@@ -97,12 +109,15 @@ public static class CompanyGameHierarchySorter
         string baseB = mb.Groups[1].Value;
 
         int baseCompare = string.CompareOrdinal(baseA, baseB);
-        if (baseCompare != 0) return baseCompare;
+        if (baseCompare != 0)
+            return baseCompare;
 
         long numberA = long.Parse(ma.Groups[2].Value);
         long numberB = long.Parse(mb.Groups[2].Value);
+
         int numberCompare = numberA.CompareTo(numberB);
-        if (numberCompare != 0) return numberCompare;
+        if (numberCompare != 0)
+            return numberCompare;
 
         return string.CompareOrdinal(a.name, b.name);
     }
