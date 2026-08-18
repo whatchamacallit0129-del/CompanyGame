@@ -6,7 +6,6 @@ public sealed class CompanyGameCorridorEditor : Editor
 {
     private CompanyGameCorridor corridor;
     private bool editMode;
-    private CompanyGamePathNode selectedNode;
 
     private void OnEnable()
     {
@@ -17,7 +16,6 @@ public sealed class CompanyGameCorridorEditor : Editor
     private void OnDisable()
     {
         SceneView.duringSceneGui -= DuringSceneGUI;
-        selectedNode = null;
     }
 
     public override void OnInspectorGUI()
@@ -26,37 +24,31 @@ public sealed class CompanyGameCorridorEditor : Editor
         EditorGUILayout.Space(8f);
         EditorGUILayout.LabelField("Corridor Editor", EditorStyles.boldLabel);
 
-        bool newEditMode = GUILayout.Toggle(editMode, editMode ? "Exit Corridor Edit Mode" : "Enter Corridor Edit Mode", "Button");
+        bool newEditMode = GUILayout.Toggle(editMode,
+            editMode ? "Exit Corridor Edit Mode" : "Enter Corridor Edit Mode", "Button");
+
         if (newEditMode != editMode)
         {
             editMode = newEditMode;
-            selectedNode = null;
             SceneView.RepaintAll();
         }
 
         EditorGUILayout.HelpBox(
-            "Edit Mode: click a Path Node to select it. Click another Path Node to connect. " +
-            "Or click directly on another Corridor's drawn line: a connection Node is created there automatically and linked.",
-            MessageType.Info);
+            "Edit Mode: this Corridor is the source. Click another Corridor to connect them. " +
+            "The selected Corridor becomes green when connected.", MessageType.Info);
 
-        EditorGUILayout.Space(4f);
-        EditorGUILayout.LabelField("Network", EditorStyles.boldLabel);
         EditorGUILayout.LabelField("Nodes", corridor.Nodes.Count.ToString());
         EditorGUILayout.LabelField("Connected Corridors", corridor.ConnectedCorridors.Count.ToString());
 
-        if (selectedNode != null)
-        {
-            EditorGUILayout.LabelField("Selected Node", selectedNode.name);
-            if (GUILayout.Button("Cancel Node Selection"))
-            {
-                selectedNode = null;
-                SceneView.RepaintAll();
-            }
-        }
+        EditorGUILayout.Space(4f);
+        if (GUILayout.Button("Connect Nodes In List Order"))
+            ConnectNodesInListOrder();
 
-        if (GUILayout.Button("Connect Nodes In List Order")) ConnectNodesInListOrder();
-        if (GUILayout.Button("Disconnect All Corridor Nodes")) DisconnectAll();
-        if (GUILayout.Button("Disconnect All Corridors")) DisconnectAllCorridors();
+        if (GUILayout.Button("Disconnect All Corridor Nodes"))
+            DisconnectAllNodes();
+
+        if (GUILayout.Button("Disconnect All Corridors"))
+            DisconnectAllCorridors();
 
         EditorGUILayout.Space(6f);
         EditorGUILayout.LabelField("Connected Corridors", EditorStyles.boldLabel);
@@ -73,8 +65,8 @@ public sealed class CompanyGameCorridorEditor : Editor
                 EditorGUILayout.ObjectField(other, typeof(CompanyGameCorridor), true);
                 if (GUILayout.Button("X", GUILayout.Width(24f)))
                 {
-                    Undo.RecordObject(corridor, "Disconnect Corridor");
-                    Undo.RecordObject(other, "Disconnect Corridor");
+                    Undo.RecordObject(corridor, "Disconnect Corridors");
+                    Undo.RecordObject(other, "Disconnect Corridors");
                     corridor.DisconnectCorridor(other);
                     EditorUtility.SetDirty(corridor);
                     EditorUtility.SetDirty(other);
@@ -89,186 +81,75 @@ public sealed class CompanyGameCorridorEditor : Editor
     private void DuringSceneGUI(SceneView sceneView)
     {
         if (corridor == null) return;
-        DrawAllCorridorNetworks();
 
-        if (!editMode || Selection.activeGameObject != corridor.gameObject) return;
+        DrawCorridorNetwork();
+
+        if (!editMode || Selection.activeGameObject != corridor.gameObject)
+            return;
 
         Event e = Event.current;
-        if (e.type != EventType.MouseDown || e.button != 0 || e.alt) return;
+        if (e.type != EventType.MouseDown || e.button != 0 || e.alt)
+            return;
 
         GameObject picked = HandleUtility.PickGameObject(e.mousePosition, false);
-        CompanyGamePathNode pickedNode = picked != null ? picked.GetComponent<CompanyGamePathNode>() : null;
-
-        if (pickedNode != null)
-        {
-            HandleNodeClick(pickedNode);
-            e.Use();
+        if (picked == null || picked == corridor.gameObject)
             return;
-        }
 
-        if (picked != null) return;
+        CompanyGameCorridor other = picked.GetComponent<CompanyGameCorridor>();
+        if (other == null)
+            other = picked.GetComponentInParent<CompanyGameCorridor>();
 
-        if (!TryGetScenePoint(e.mousePosition, out Vector3 point)) return;
-
-        if (selectedNode != null && TryFindOtherCorridorSegment(point, corridor, out CompanyGameCorridor targetCorridor, out Vector3 targetPoint))
+        if (other != null && other != corridor)
         {
-            CompanyGamePathNode targetNode = CreateNodeOnCorridor(targetCorridor, targetPoint);
-            ConnectSelectedNodes(selectedNode, targetNode);
-            selectedNode = null;
-            Selection.activeGameObject = corridor.gameObject;
-            SceneView.RepaintAll();
+            ConnectCorridors(corridor, other);
             e.Use();
-            return;
         }
-
-        CreateNode(point);
-        e.Use();
     }
 
-    private void HandleNodeClick(CompanyGamePathNode node)
+    private static void ConnectCorridors(CompanyGameCorridor first, CompanyGameCorridor second)
     {
-        if (selectedNode == node)
-        {
-            selectedNode = null;
-            SceneView.RepaintAll();
+        if (first == null || second == null || first == second)
             return;
-        }
 
-        if (selectedNode == null)
+        Undo.RecordObject(first, "Connect Corridors");
+        Undo.RecordObject(second, "Connect Corridors");
+
+        // If either corridor has no node yet, create a connection node at its corridor position.
+        CompanyGamePathNode firstNode = EnsureConnectionNode(first, second.transform.position);
+        CompanyGamePathNode secondNode = EnsureConnectionNode(second, first.transform.position);
+
+        if (firstNode != null && secondNode != null)
         {
-            selectedNode = node;
-            Selection.activeGameObject = corridor.gameObject;
-            SceneView.RepaintAll();
-            return;
+            Undo.RecordObject(firstNode, "Connect Corridor Nodes");
+            Undo.RecordObject(secondNode, "Connect Corridor Nodes");
+            firstNode.ConnectTo(secondNode);
+            EditorUtility.SetDirty(firstNode);
+            EditorUtility.SetDirty(secondNode);
         }
 
-        ConnectSelectedNodes(selectedNode, node);
-        selectedNode = null;
-        Selection.activeGameObject = corridor.gameObject;
-        SceneView.RepaintAll();
-    }
-
-    private void ConnectSelectedNodes(CompanyGamePathNode first, CompanyGamePathNode second)
-    {
-        if (first == null || second == null || first == second) return;
-
-        CompanyGameCorridor firstOwner = first.GetComponentInParent<CompanyGameCorridor>();
-        CompanyGameCorridor secondOwner = second.GetComponentInParent<CompanyGameCorridor>();
-
-        Undo.RecordObject(first, "Connect Path Nodes");
-        Undo.RecordObject(second, "Connect Path Nodes");
-        first.ConnectTo(second);
-
-        if (firstOwner != null && secondOwner != null && firstOwner != secondOwner)
-        {
-            Undo.RecordObject(firstOwner, "Connect Corridors");
-            Undo.RecordObject(secondOwner, "Connect Corridors");
-            firstOwner.ConnectCorridor(secondOwner);
-            EditorUtility.SetDirty(firstOwner);
-            EditorUtility.SetDirty(secondOwner);
-        }
-
+        first.ConnectCorridor(second);
         EditorUtility.SetDirty(first);
         EditorUtility.SetDirty(second);
-    }
-
-    private void CreateNode(Vector3 position)
-    {
-        CompanyGamePathNode previous = corridor.GetNearestNode(position);
-
-        GameObject nodeObject = new GameObject("Path Node");
-        Undo.RegisterCreatedObjectUndo(nodeObject, "Create Corridor Path Node");
-        nodeObject.transform.position = position;
-        nodeObject.transform.SetParent(corridor.transform, true);
-
-        CompanyGamePathNode node = nodeObject.AddComponent<CompanyGamePathNode>();
-        Undo.RecordObject(corridor, "Add Corridor Path Node");
-        corridor.AddNode(node);
-
-        if (previous != null && previous != node)
-        {
-            Undo.RecordObject(previous, "Connect Corridor Path Nodes");
-            previous.ConnectTo(node);
-            EditorUtility.SetDirty(previous);
-        }
-
-        EditorUtility.SetDirty(node);
-        EditorUtility.SetDirty(corridor);
-        Selection.activeGameObject = corridor.gameObject;
         SceneView.RepaintAll();
     }
 
-    private static CompanyGamePathNode CreateNodeOnCorridor(CompanyGameCorridor targetCorridor, Vector3 position)
+    private static CompanyGamePathNode EnsureConnectionNode(CompanyGameCorridor owner, Vector3 targetPosition)
     {
-        CompanyGamePathNode existing = targetCorridor.GetNearestNode(position);
-        if (existing != null && (existing.transform.position - position).sqrMagnitude < 0.01f)
+        CompanyGamePathNode existing = owner.GetNearestNode(targetPosition);
+        if (existing != null)
             return existing;
 
         GameObject nodeObject = new GameObject("Path Node");
-        Undo.RegisterCreatedObjectUndo(nodeObject, "Create Corridor Connection Node");
-        nodeObject.transform.position = position;
-        nodeObject.transform.SetParent(targetCorridor.transform, true);
+        Undo.RegisterCreatedObjectUndo(nodeObject, "Create Connection Node");
+        nodeObject.transform.SetParent(owner.transform, true);
+        nodeObject.transform.position = owner.transform.position;
 
         CompanyGamePathNode node = nodeObject.AddComponent<CompanyGamePathNode>();
-        Undo.RecordObject(targetCorridor, "Add Corridor Connection Node");
-        targetCorridor.AddNode(node);
-
-        CompanyGamePathNode nearest = targetCorridor.GetNearestNode(position);
-        if (nearest != null && nearest != node)
-        {
-            Undo.RecordObject(nearest, "Connect Corridor Connection Node");
-            nearest.ConnectTo(node);
-            EditorUtility.SetDirty(nearest);
-        }
-
+        Undo.RecordObject(owner, "Add Connection Node");
+        owner.AddNode(node);
         EditorUtility.SetDirty(node);
-        EditorUtility.SetDirty(targetCorridor);
+        EditorUtility.SetDirty(owner);
         return node;
-    }
-
-    private static bool TryFindOtherCorridorSegment(
-        Vector3 point,
-        CompanyGameCorridor source,
-        out CompanyGameCorridor target,
-        out Vector3 targetPoint)
-    {
-        target = null;
-        targetPoint = point;
-        float bestDistance = float.MaxValue;
-        const float maxDistance = 0.6f;
-
-        CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>(FindObjectsSortMode.None);
-        foreach (CompanyGameCorridor candidate in corridors)
-        {
-            if (candidate == null || candidate == source || candidate.Nodes.Count < 2) continue;
-
-            for (int i = 0; i < candidate.Nodes.Count - 1; i++)
-            {
-                CompanyGamePathNode a = candidate.Nodes[i];
-                CompanyGamePathNode b = candidate.Nodes[i + 1];
-                if (a == null || b == null) continue;
-
-                Vector3 closest = ClosestPointOnSegment(point, a.transform.position, b.transform.position);
-                float distance = (closest - point).sqrMagnitude;
-                if (distance < bestDistance && distance <= maxDistance * maxDistance)
-                {
-                    bestDistance = distance;
-                    target = candidate;
-                    targetPoint = closest;
-                }
-            }
-        }
-
-        return target != null;
-    }
-
-    private static Vector3 ClosestPointOnSegment(Vector3 point, Vector3 a, Vector3 b)
-    {
-        Vector3 direction = b - a;
-        float lengthSquared = direction.sqrMagnitude;
-        if (lengthSquared <= Mathf.Epsilon) return a;
-        float t = Mathf.Clamp01(Vector3.Dot(point - a, direction) / lengthSquared);
-        return a + direction * t;
     }
 
     private void ConnectNodesInListOrder()
@@ -292,14 +173,16 @@ public sealed class CompanyGameCorridorEditor : Editor
         SceneView.RepaintAll();
     }
 
-    private void DisconnectAll()
+    private void DisconnectAllNodes()
     {
-        Undo.RecordObject(corridor, "Disconnect Corridor Nodes");
         foreach (CompanyGamePathNode node in corridor.Nodes)
         {
             if (node == null) continue;
+
             CompanyGamePathNode[] connections = new CompanyGamePathNode[node.Connections.Count];
-            for (int i = 0; i < node.Connections.Count; i++) connections[i] = node.Connections[i];
+            for (int i = 0; i < node.Connections.Count; i++)
+                connections[i] = node.Connections[i];
+
             Undo.RecordObject(node, "Disconnect Corridor Nodes");
             foreach (CompanyGamePathNode other in connections)
             {
@@ -310,14 +193,14 @@ public sealed class CompanyGameCorridorEditor : Editor
             }
             EditorUtility.SetDirty(node);
         }
-        EditorUtility.SetDirty(corridor);
         SceneView.RepaintAll();
     }
 
     private void DisconnectAllCorridors()
     {
         CompanyGameCorridor[] connected = new CompanyGameCorridor[corridor.ConnectedCorridors.Count];
-        for (int i = 0; i < corridor.ConnectedCorridors.Count; i++) connected[i] = corridor.ConnectedCorridors[i];
+        for (int i = 0; i < corridor.ConnectedCorridors.Count; i++)
+            connected[i] = corridor.ConnectedCorridors[i];
 
         Undo.RecordObject(corridor, "Disconnect Corridors");
         foreach (CompanyGameCorridor other in connected)
@@ -331,44 +214,39 @@ public sealed class CompanyGameCorridorEditor : Editor
         SceneView.RepaintAll();
     }
 
-    private static void DrawAllCorridorNetworks()
+    private void DrawCorridorNetwork()
     {
-        CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>(FindObjectsSortMode.None);
-        foreach (CompanyGameCorridor current in corridors)
+        bool connected = corridor.ConnectedCorridors.Count > 0;
+        Handles.color = connected ? Color.green : Color.blue;
+
+        foreach (CompanyGamePathNode node in corridor.Nodes)
         {
-            if (current == null) continue;
+            if (node == null) continue;
+            float size = HandleUtility.GetHandleSize(node.transform.position) * 0.13f;
+            Handles.SphereHandleCap(0, node.transform.position, Quaternion.identity, size, EventType.Repaint);
+        }
 
-            Handles.color = Color.cyan;
-            foreach (CompanyGamePathNode node in current.Nodes)
+        foreach (CompanyGamePathNode node in corridor.Nodes)
+        {
+            if (node == null) continue;
+            foreach (CompanyGamePathNode connection in node.Connections)
             {
-                if (node == null) continue;
-                Handles.SphereHandleCap(0, node.transform.position, Quaternion.identity,
-                    HandleUtility.GetHandleSize(node.transform.position) * 0.12f, EventType.Repaint);
-            }
-
-            foreach (CompanyGamePathNode node in current.Nodes)
-            {
-                if (node == null) continue;
-                foreach (CompanyGamePathNode connection in node.Connections)
-                {
-                    if (connection == null) continue;
-                    Handles.DrawAAPolyLine(2f, node.transform.position, connection.transform.position);
-                }
+                if (connection == null) continue;
+                Handles.DrawAAPolyLine(2f, node.transform.position, connection.transform.position);
             }
         }
-    }
 
-    private static bool TryGetScenePoint(Vector2 mousePosition, out Vector3 point)
-    {
-        Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
-        Plane plane = new Plane(Vector3.forward, Vector3.zero);
-        if (plane.Raycast(ray, out float distance))
+        if (connected)
         {
-            point = ray.GetPoint(distance);
-            point.z = 0f;
-            return true;
+            Handles.color = Color.green;
+            foreach (CompanyGameCorridor other in corridor.ConnectedCorridors)
+            {
+                if (other == null) continue;
+                CompanyGamePathNode a = corridor.GetNearestNode(other.transform.position);
+                CompanyGamePathNode b = other.GetNearestNode(corridor.transform.position);
+                if (a != null && b != null)
+                    Handles.DrawAAPolyLine(6f, a.transform.position, b.transform.position);
+            }
         }
-        point = Vector3.zero;
-        return false;
     }
 }
