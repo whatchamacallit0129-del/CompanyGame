@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Runtime navigation graph. It only knows about nodes and their explicit connections.
-/// Corridors, doors, elevators and rooms can all use the same graph without special cases.
+/// Runtime navigation graph. It only knows about nodes and explicit connections.
+/// Corridors, rooms, doors and future transport links can all use the same graph.
 /// </summary>
 public sealed class CompanyGameNavigationGraph : MonoBehaviour
 {
@@ -35,16 +35,16 @@ public sealed class CompanyGameNavigationGraph : MonoBehaviour
         nodes.AddRange(Object.FindObjectsByType<CompanyGamePathNode>());
     }
 
-    public CompanyGamePathNode FindNearest(Vector3 position, int floor)
+    public CompanyGamePathNode FindNearest(Vector3 position, int floor, float maxDistance)
     {
         CompanyGamePathNode nearest = null;
-        float best = float.MaxValue;
+        float best = maxDistance * maxDistance;
 
         foreach (CompanyGamePathNode node in nodes)
         {
             if (node == null || node.Floor != floor) continue;
             float distance = (node.transform.position - position).sqrMagnitude;
-            if (distance < best)
+            if (distance <= best)
             {
                 best = distance;
                 nearest = node;
