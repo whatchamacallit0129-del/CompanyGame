@@ -89,8 +89,6 @@ public static class CompanyGameCommandAgent
 
             WriteResult(projectPath, id, raw, result);
 
-            // Persist the processed ID BEFORE deleting command.json.
-            // If deletion fails, the same command can never execute again.
             File.WriteAllText(processedPath, id);
             SafeDelete(commandPath);
             AssetDatabase.Refresh();
@@ -223,15 +221,17 @@ public static class CompanyGameCommandAgent
         return matches;
     }
 
+    // Delete numbered objects from the highest number downward.
+    // Example: Employee (1) ~ Employee (15), count 7 => 15,14,13,12,11,10,9.
     private static int CompareNames(string a, string b, string prefix)
     {
-        if (a.Equals(prefix, StringComparison.Ordinal)) return -1;
-        if (b.Equals(prefix, StringComparison.Ordinal)) return 1;
+        if (a.Equals(prefix, StringComparison.Ordinal)) return 1;
+        if (b.Equals(prefix, StringComparison.Ordinal)) return -1;
         int ai = ExtractNumber(a, prefix), bi = ExtractNumber(b, prefix);
-        if (ai >= 0 && bi >= 0) return ai.CompareTo(bi);
+        if (ai >= 0 && bi >= 0) return bi.CompareTo(ai);
         if (ai >= 0) return -1;
         if (bi >= 0) return 1;
-        return string.CompareOrdinal(a, b);
+        return string.CompareOrdinal(b, a);
     }
 
     private static int ExtractNumber(string name, string prefix)
