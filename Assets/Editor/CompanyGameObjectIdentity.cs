@@ -11,20 +11,30 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
     public string ObjectId => objectId;
     public string ObjectType => objectType;
 
-    private void Reset() => EnsureIdentity(objectType);
-    private void OnValidate() => EnsureIdentity(objectType);
+    private void Reset()
+    {
+        if (string.IsNullOrEmpty(objectId)) EnsureIdentity(objectType);
+    }
 
-    public void EnsureId() => EnsureIdentity(objectType);
+    public void EnsureId(string type)
+    {
+        EnsureIdentity(type);
+    }
 
     public void EnsureIdentity(string type)
     {
-        type = NormalizeType(type);
-        if (string.IsNullOrEmpty(objectId) || !string.Equals(objectType, type, StringComparison.OrdinalIgnoreCase))
+        string normalized = NormalizeType(type);
+        if (!string.IsNullOrEmpty(objectId))
         {
-            objectType = type;
-            objectId = GenerateId(type);
+            // IDs are permanent. Renaming/reclassification never changes an existing ID.
+            if (string.IsNullOrEmpty(objectType)) objectType = normalized;
             EditorUtility.SetDirty(this);
+            return;
         }
+
+        objectType = normalized;
+        objectId = GenerateId(normalized);
+        EditorUtility.SetDirty(this);
     }
 
     private static string NormalizeType(string type)
@@ -89,10 +99,6 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
             {
                 identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
                 identity.EnsureIdentity("Object");
-            }
-            else
-            {
-                identity.EnsureIdentity(identity.objectType);
             }
         }
     }
