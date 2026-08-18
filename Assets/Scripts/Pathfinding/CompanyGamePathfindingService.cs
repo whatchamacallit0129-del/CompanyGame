@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Default graph pathfinder. Uses Dijkstra so per-node movement costs can be
-/// introduced now and richer traversal rules can be added later without changing callers.
+/// Default graph pathfinder. Uses Dijkstra so traversal costs can evolve
+/// independently from employees and movement controllers.
 /// </summary>
 public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingService
 {
@@ -25,6 +25,7 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
 
         AddNode(start, distances, unvisited);
         AddNode(goal, distances, unvisited);
+        distances[start] = 0f;
 
         while (unvisited.Count > 0)
         {
@@ -97,19 +98,14 @@ public sealed class CompanyGamePathfindingService : ICompanyGamePathfindingServi
         return nearest;
     }
 
-    private static void AddNode(
-        CompanyGamePathNode node,
-        Dictionary<CompanyGamePathNode, float> distances,
-        List<CompanyGamePathNode> unvisited)
+    private static void AddNode(CompanyGamePathNode node, Dictionary<CompanyGamePathNode, float> distances, List<CompanyGamePathNode> unvisited)
     {
         if (distances.ContainsKey(node)) return;
         distances[node] = float.MaxValue;
         unvisited.Add(node);
     }
 
-    private static CompanyGamePathNode GetLowestCostNode(
-        List<CompanyGamePathNode> nodes,
-        Dictionary<CompanyGamePathNode, float> distances)
+    private static CompanyGamePathNode GetLowestCostNode(List<CompanyGamePathNode> nodes, Dictionary<CompanyGamePathNode, float> distances)
     {
         CompanyGamePathNode result = null;
         float best = float.MaxValue;
