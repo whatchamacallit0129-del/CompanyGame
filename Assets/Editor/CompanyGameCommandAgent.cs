@@ -76,8 +76,9 @@ public static class CompanyGameCommandAgent
 
     private static void SafeDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch (Exception ex) { Debug.LogWarning("[Company Game] Could not delete command file: " + ex.Message); } }
     private sealed class CommandRequest { public string Name; public string Arguments; public CommandRequest(string name, string arguments) { Name = name; Arguments = arguments; } }
-    private sealed class CommandResult { public bool Success; public string Message; public string Exception; public readonly List<string> CreatedObjects = new List<string>(); public readonly List<string> DeletedObjects = new List<string>(); public readonly List<LogRecord> Errors = new List<LogRecord>(); private CommandResult(bool success, string message) { Success = success; Message = message; } public static CommandResult SuccessResult(string message) { return new CommandResult(true, message); } public static CommandResult Failure(string message) { return new CommandResult(false, message); } }
+    private sealed class CommandResult { public bool Success; public string Message; public string Exception; public readonly List<string> CreatedObjects = new List<string>(); public readonly List<string> DeletedObjects = new List<string>(); public readonly List<string> RenamedObjects = new List<string>(); public readonly List<LogRecord> Errors = new List<LogRecord>(); private CommandResult(bool success, string message) { Success = success; Message = message; } public static CommandResult SuccessResult(string message) { return new CommandResult(true, message); } public static CommandResult Failure(string message) { return new CommandResult(false, message); } }
     private sealed class LogRecord { public string Type; public string Message; public string StackTrace; public LogRecord(string type, string message, string stackTrace) { Type = type; Message = message; StackTrace = stackTrace; } }
+    private sealed class RenamePair { public string OldName; public string NewName; public RenamePair(string oldName, string newName) { OldName = oldName; NewName = newName; } }
     private static CommandRequest ParseCommand(string raw) { string[] parts = raw.Split(new[] { ':' }, 2); return new CommandRequest(parts[0].Trim().ToUpperInvariant(), parts.Length > 1 ? parts[1].Trim() : ""); }
     private static CommandResult Execute(CommandRequest request) { if (string.IsNullOrWhiteSpace(request.Name)) return CommandResult.Failure("Command name is empty."); Func<CommandRequest, CommandResult> handler; if (!Handlers.TryGetValue(request.Name, out handler)) return CommandResult.Failure("Unknown command: " + request.Name); return handler(request); }
 
@@ -157,7 +158,58 @@ public static class CompanyGameCommandAgent
     private static GameObject CreateSingleInteractable(string name) { GameObject go = new GameObject(name); SpriteRenderer sr = go.AddComponent<SpriteRenderer>(); sr.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("Sprites/Default.sprite"); go.AddComponent<BoxCollider2D>(); TryAddComponentByName(go, "DraggableObject2D"); TryAddComponentByName(go, "InteractableObject2D"); Undo.RegisterCreatedObjectUndo(go, "Create Interactable Object"); Selection.activeGameObject = go; EditorUtility.SetDirty(go); return go; }
 
     private static CommandResult CreateEmptyObject(CommandRequest r) { string name = string.IsNullOrWhiteSpace(r.Arguments) ? "CompanyObject" : r.Arguments.Trim(); GameObject go = new GameObject(name); Undo.RegisterCreatedObjectUndo(go, "Create Company Object"); Selection.activeGameObject = go; return CommandResult.SuccessResult("Created object: " + name); }
-    private static CommandResult RenameObject(CommandRequest r) { string[] v; if (!Args(r.Arguments, 2, out v)) return CommandResult.Failure("RENAME_OBJECT requires object:newName."); GameObject go = FindObject(v[0]); if (go == null) return CommandResult.Failure("Object not found: " + v[0]); Undo.RecordObject(go, "Rename Object"); go.name = v[1]; EditorUtility.SetDirty(go); return CommandResult.SuccessResult("Renamed object to: " + v[1]); }
+
+    // Safe batch rename. Format: oldName=newName,oldName=newName,...
+    // All targets and final names are validated before any rename is performed.
+    private static CommandResult RenameObject(CommandRequest r)
+    {
+        List<RenamePair> pairs; string error;
+        if (!TryParseRenamePairs(r.Arguments, out pairs, out error)) return CommandResult.Failure(error);
+        Dictionary<GameObject, string> plan = new Dictionary<GameObject, string>();
+        Dictionary<GameObject, string> oldNames = new Dictionary<GameObject, string>();
+        HashSet<string> finalNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (RenamePair pair in pairs)
+        {
+            GameObject go = FindObject(pair.OldName);
+            if (go == null) return CommandResult.Failure("Rename validation failed. Object not found: " + pair.OldName);
+            if (plan.ContainsKey(go)) return CommandResult.Failure("Duplicate rename target: " + pair.OldName);
+            if (!finalNames.Add(pair.NewName)) return CommandResult.Failure("Duplicate final name in batch: " + pair.NewName);
+            GameObject existing = FindObject(pair.NewName);
+            if (existing != null && !plan.ContainsKey(existing) && existing != go) return CommandResult.Failure("Target name already exists: " + pair.NewName);
+            plan.Add(go, pair.NewName); oldNames.Add(go, go.name);
+        }
+        CommandResult result = CommandResult.SuccessResult("Renamed " + plan.Count + " object(s).");
+        try
+        {
+            foreach (KeyValuePair<GameObject, string> item in plan)
+            {
+                Undo.RecordObject(item.Key, "Batch Rename Objects");
+                item.Key.name = item.Value;
+                EditorUtility.SetDirty(item.Key);
+                result.RenamedObjects.Add(oldNames[item.Key] + " -> " + item.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            foreach (KeyValuePair<GameObject, string> item in oldNames) if (item.Key != null) item.Key.name = item.Value;
+            return CommandResult.Failure("Batch rename rolled back: " + ex.Message);
+        }
+        return result;
+    }
+
+    private static bool TryParseRenamePairs(string text, out List<RenamePair> pairs, out string error)
+    {
+        pairs = new List<RenamePair>(); error = null;
+        string[] entries = text.Split(',');
+        foreach (string entry in entries)
+        {
+            string[] pair = entry.Split(new[] { '=' }, 2);
+            if (pair.Length != 2 || string.IsNullOrWhiteSpace(pair[0]) || string.IsNullOrWhiteSpace(pair[1])) { error = "RENAME_OBJECT format: oldName=newName[,oldName=newName...]."; return false; }
+            pairs.Add(new RenamePair(pair[0].Trim(), pair[1].Trim()));
+        }
+        return pairs.Count > 0;
+    }
+
     private static CommandResult SetActive(CommandRequest r) { string[] v; bool active; if (!Args(r.Arguments, 2, out v) || !bool.TryParse(v[1], out active)) return CommandResult.Failure("SET_ACTIVE requires object:true|false."); GameObject go = FindObject(v[0]); if (go == null) return CommandResult.Failure("Object not found: " + v[0]); Undo.RecordObject(go, "Set Active"); go.SetActive(active); return CommandResult.SuccessResult("Set active: " + v[0]); }
     private static CommandResult SetPosition(CommandRequest r) { return SetVector(r, "position", delegate(Transform t, Vector3 v) { t.position = v; }); }
     private static CommandResult SetScale(CommandRequest r) { return SetVector(r, "scale", delegate(Transform t, Vector3 v) { t.localScale = v; }); }
@@ -180,7 +232,7 @@ public static class CompanyGameCommandAgent
     private static bool ValidComponent(Type type) { return type != null && typeof(Component).IsAssignableFrom(type) && !type.IsAbstract; }
     private static bool Args(string text, int count, out string[] values) { values = text.Split(':'); if (values.Length != count) { values = null; return false; } for (int i = 0; i < values.Length; i++) values[i] = values[i].Trim(); return true; }
     private static bool TryFloat(string value, out float result) { return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result); }
-    private static void WriteResult(string projectPath, string id, string command, CommandResult result) { string json = "{\n  \"id\": \"" + Escape(id) + "\",\n  \"command\": \"" + Escape(command) + "\",\n  \"success\": " + result.Success.ToString().ToLowerInvariant() + ",\n  \"message\": \"" + Escape(result.Message) + "\",\n  \"exception\": \"" + Escape(result.Exception) + "\",\n  \"createdObjects\": [" + QuoteList(result.CreatedObjects) + "],\n  \"deletedObjects\": [" + QuoteList(result.DeletedObjects) + "],\n  \"errors\": [" + QuoteErrors(result.Errors) + "]\n}"; File.WriteAllText(Path.Combine(projectPath, ResultFileName), json); string resultsPath = Path.Combine(projectPath, ResultsDirectoryName); Directory.CreateDirectory(resultsPath); File.WriteAllText(Path.Combine(resultsPath, id + ".json"), json); }
+    private static void WriteResult(string projectPath, string id, string command, CommandResult result) { string json = "{\n  \"id\": \"" + Escape(id) + "\",\n  \"command\": \"" + Escape(command) + "\",\n  \"success\": " + result.Success.ToString().ToLowerInvariant() + ",\n  \"message\": \"" + Escape(result.Message) + "\",\n  \"exception\": \"" + Escape(result.Exception) + "\",\n  \"createdObjects\": [" + QuoteList(result.CreatedObjects) + "],\n  \"deletedObjects\": [" + QuoteList(result.DeletedObjects) + "],\n  \"renamedObjects\": [" + QuoteList(result.RenamedObjects) + "],\n  \"errors\": [" + QuoteErrors(result.Errors) + "]\n}"; File.WriteAllText(Path.Combine(projectPath, ResultFileName), json); string resultsPath = Path.Combine(projectPath, ResultsDirectoryName); Directory.CreateDirectory(resultsPath); File.WriteAllText(Path.Combine(resultsPath, id + ".json"), json); }
     private static string QuoteList(List<string> values) { List<string> result = new List<string>(); foreach (string value in values) result.Add("\"" + Escape(value) + "\""); return string.Join(",", result.ToArray()); }
     private static string QuoteErrors(List<LogRecord> values) { List<string> result = new List<string>(); foreach (LogRecord value in values) result.Add("{\"type\":\"" + Escape(value.Type) + "\",\"message\":\"" + Escape(value.Message) + "\",\"stackTrace\":\"" + Escape(value.StackTrace) + "\"}"); return string.Join(",", result.ToArray()); }
     private static string Escape(string value) { return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n"); }
