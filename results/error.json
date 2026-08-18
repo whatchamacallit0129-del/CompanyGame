@@ -1,5 +1,5 @@
 {
-  "id":"92a9cd1407bedc9f72bc366c6673bc051ff4113cc9b0fdc173fb07230cd737ed",
+  "id":"81ac6c9aa3c3c5a80acbe746ce5b9abbb81e4ea6d695cdd4d394988d7d049ca1",
   "command":"CREATE_INTERACTABLE_OBJECT:직원:5",
   "success":false,
   "message":"Command execution exception: Object reference not set to an instance of an object",
