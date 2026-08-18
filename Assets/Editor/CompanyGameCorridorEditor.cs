@@ -7,6 +7,7 @@ public sealed class CompanyGameCorridorEditor : Editor
     private CompanyGameCorridor corridor;
     private bool editMode;
     private static CompanyGameCorridor activeSource;
+    private static bool placeNodeMode;
 
     private void OnEnable()
     {
@@ -18,6 +19,7 @@ public sealed class CompanyGameCorridorEditor : Editor
     {
         SceneView.duringSceneGui -= DuringSceneGUI;
         if (activeSource == corridor) activeSource = null;
+        if (placeNodeMode) placeNodeMode = false;
     }
 
     public override void OnInspectorGUI()
@@ -32,6 +34,7 @@ public sealed class CompanyGameCorridorEditor : Editor
         {
             editMode = newEditMode;
             activeSource = editMode ? corridor : null;
+            placeNodeMode = false;
             SceneView.RepaintAll();
         }
 
@@ -41,7 +44,32 @@ public sealed class CompanyGameCorridorEditor : Editor
                 : "Select a Corridor and enter Edit Mode to connect it to another Corridor.",
             MessageType.Info);
 
-        EditorGUILayout.LabelField("Nodes", corridor.Nodes.Count.ToString());
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Path Nodes", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Current Nodes", corridor.Nodes.Count.ToString());
+
+        if (GUILayout.Button("Add Node At Corridor Center"))
+            AddNode(corridor, corridor.transform.position);
+
+        if (GUILayout.Button(placeNodeMode ? "Finish Node Placement" : "Add Node By Clicking Scene"))
+        {
+            placeNodeMode = !placeNodeMode;
+            SceneView.RepaintAll();
+        }
+
+        if (GUILayout.Button("Create Start / End Nodes"))
+            CreateStartEndNodes(corridor);
+
+        if (GUILayout.Button("Sort Nodes"))
+        {
+            Undo.RecordObject(corridor, "Sort Corridor Nodes");
+            corridor.SortNodesByDistance();
+            EditorUtility.SetDirty(corridor);
+            SceneView.RepaintAll();
+        }
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("Corridor Connections", EditorStyles.boldLabel);
         EditorGUILayout.LabelField("Connected Corridors", corridor.ConnectedCorridors.Count.ToString());
 
         if (GUILayout.Button("Connect Nodes In List Order")) ConnectNodesInListOrder();
@@ -53,14 +81,81 @@ public sealed class CompanyGameCorridorEditor : Editor
     {
         if (corridor == null) return;
 
-        // Every Corridor draws its own nodes. The global visualization tool draws all corridors too.
         DrawCorridorNetwork(corridor);
+
+        if (placeNodeMode && Selection.activeGameObject == corridor.gameObject)
+            HandleNodePlacement();
 
         if (editMode && activeSource == corridor)
         {
             DrawConnectOverlay();
             HandleConnectionClick();
         }
+    }
+
+    private static void HandleNodePlacement()
+    {
+        Event e = Event.current;
+        if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+        {
+            placeNodeMode = false;
+            e.Use();
+            SceneView.RepaintAll();
+            return;
+        }
+
+        if (e.type != EventType.MouseDown || e.button != 0 || e.alt) return;
+        if (GUIUtility.hotControl != 0) return;
+
+        CompanyGameCorridor owner = Selection.activeGameObject != null
+            ? Selection.activeGameObject.GetComponent<CompanyGameCorridor>()
+            : null;
+        if (owner == null) return;
+
+        Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
+        Plane plane = new Plane(Vector3.forward, owner.transform.position);
+        if (!plane.Raycast(ray, out float distance)) return;
+
+        AddNode(owner, ray.GetPoint(distance));
+        e.Use();
+        placeNodeMode = false;
+        SceneView.RepaintAll();
+    }
+
+    private static void AddNode(CompanyGameCorridor owner, Vector3 position)
+    {
+        if (owner == null) return;
+
+        Undo.RecordObject(owner, "Add Corridor Node");
+
+        GameObject nodeObject = new GameObject("Path Node");
+        Undo.RegisterCreatedObjectUndo(nodeObject, "Create Corridor Node");
+        nodeObject.transform.SetParent(owner.transform, true);
+        nodeObject.transform.position = position;
+
+        CompanyGamePathNode node = nodeObject.AddComponent<CompanyGamePathNode>();
+        owner.AddNode(node);
+
+        EditorUtility.SetDirty(node);
+        EditorUtility.SetDirty(owner);
+        Selection.activeGameObject = owner.gameObject;
+        SceneView.RepaintAll();
+    }
+
+    private static void CreateStartEndNodes(CompanyGameCorridor owner)
+    {
+        if (owner == null) return;
+
+        Vector3 center = owner.transform.position;
+        float halfLength = Mathf.Max(1f, owner.Width);
+
+        AddNode(owner, center + Vector3.left * halfLength);
+        AddNode(owner, center + Vector3.right * halfLength);
+
+        Undo.RecordObject(owner, "Sort Corridor Nodes");
+        owner.SortNodesByDistance();
+        EditorUtility.SetDirty(owner);
+        SceneView.RepaintAll();
     }
 
     private static void DrawConnectOverlay()
@@ -122,7 +217,6 @@ public sealed class CompanyGameCorridorEditor : Editor
         foreach (CompanyGamePathNode node in candidate.Nodes)
         {
             if (node == null) continue;
-
             best = Mathf.Min(best, Vector3.Distance(point, node.transform.position));
             if (previous != null)
                 best = Mathf.Min(best, DistancePointToSegment(point, previous.transform.position, node.transform.position));
