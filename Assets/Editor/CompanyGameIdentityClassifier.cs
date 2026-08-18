@@ -3,12 +3,14 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Assigns category-specific persistent IDs without coupling the Command Agent to a fixed list of object types.
-/// Add new rules here later (Room, Department, Machine, etc.) without changing the identity system.
+/// Gives newly-created scene objects a category when they do not already have one.
+/// Existing IDs are never changed. Add category rules here as the game grows.
 /// </summary>
 [InitializeOnLoad]
 public static class CompanyGameIdentityClassifier
 {
+    private static bool processing;
+
     static CompanyGameIdentityClassifier()
     {
         EditorApplication.hierarchyChanged -= ClassifySceneObjects;
@@ -17,23 +19,29 @@ public static class CompanyGameIdentityClassifier
 
     private static void ClassifySceneObjects()
     {
-        if (Application.isPlaying) return;
-
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        foreach (GameObject go in objects)
+        if (processing || Application.isPlaying) return;
+        processing = true;
+        try
         {
-            if (go == null) continue;
-
-            CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
-            if (identity == null)
-                identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
-
-            string category = GetCategory(go.name);
-            identity.EnsureIdentity(category);
+            GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            foreach (GameObject go in objects)
+            {
+                if (go == null) continue;
+                CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
+                if (identity == null)
+                {
+                    identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
+                    identity.EnsureIdentity(GetCategory(go.name));
+                }
+            }
+        }
+        finally
+        {
+            processing = false;
         }
     }
 
-    private static string GetCategory(string objectName)
+    public static string GetCategory(string objectName)
     {
         if (StartsWithAny(objectName, "직원", "Employee")) return "Employee";
         if (StartsWithAny(objectName, "방", "Room")) return "Room";
