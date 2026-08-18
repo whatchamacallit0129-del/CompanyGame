@@ -6,7 +6,7 @@ cd /d D:\CompanyProject
 echo ========================================
 echo CompanyProject Auto Push
 echo ========================================
-echo 3분마다 변경사항을 확인합니다.
+echo 30초마다 변경사항을 확인합니다.
 echo 새 파일도 자동으로 추가하고 Push합니다.
 echo 종료하려면 이 창을 닫으세요.
 echo.
@@ -40,10 +40,10 @@ if %errorlevel%==0 (
 )
 
 echo.
-echo 다음 확인까지 3분 대기합니다...
+echo 다음 확인까지 30초 대기합니다...
 echo.
 
-timeout /t 180 /nobreak >nul
+timeout /t 30 /nobreak >nul
 
 goto LOOP
 ```
