@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Soft-coded navigation service. It follows only explicit node connections.
-/// No corridor-specific assumptions are made here.
+/// Soft-coded navigation service. It knows only the graph and path policy.
+/// No employee, corridor or room-specific assumptions live here.
 /// </summary>
 public sealed class CompanyGameNavigationService
 {
@@ -14,11 +14,11 @@ public sealed class CompanyGameNavigationService
         this.graph = graph;
     }
 
-    public CompanyGamePath FindPath(Vector3 startPosition, Vector3 goalPosition, int floor)
+    public CompanyGamePath FindPath(Vector3 startPosition, Vector3 goalPosition, int floor, float nodeSnapDistance)
     {
         graph.Refresh();
-        CompanyGamePathNode start = graph.FindNearest(startPosition, floor);
-        CompanyGamePathNode goal = graph.FindNearest(goalPosition, floor);
+        CompanyGamePathNode start = graph.FindNearest(startPosition, floor, nodeSnapDistance);
+        CompanyGamePathNode goal = graph.FindNearest(goalPosition, floor, nodeSnapDistance);
         return FindPath(start, goal);
     }
 
@@ -41,8 +41,8 @@ public sealed class CompanyGameNavigationService
             foreach (CompanyGamePathNode next in current.Connections)
             {
                 if (next == null) continue;
-                float candidate = distance[current] + next.MovementCost;
 
+                float candidate = distance[current] + next.MovementCost;
                 if (!distance.TryGetValue(next, out float known) || candidate < known)
                 {
                     distance[next] = candidate;
@@ -72,6 +72,7 @@ public sealed class CompanyGameNavigationService
     {
         CompanyGamePathNode result = open[0];
         float best = distance[result];
+
         for (int i = 1; i < open.Count; i++)
         {
             CompanyGamePathNode candidate = open[i];
@@ -81,6 +82,7 @@ public sealed class CompanyGameNavigationService
                 result = candidate;
             }
         }
+
         return result;
     }
 }
