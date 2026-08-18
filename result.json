@@ -1,0 +1,10 @@
+{
+  "id": "aeb174b7005e1278bda51e0d5dfbac26a83a11de3a388d113b2127cdac0f023f",
+  "command": "DELETE_OBJECT:직원:7",
+  "success": true,
+  "message": "Deleted 7 object(s) matching prefix: 직원",
+  "exception": "",
+  "createdObjects": [],
+  "deletedObjects": ["직원 (1)","직원 (2)","직원 (3)","직원 (4)","직원 (5)","직원 (6)","직원 (7)"],
+  "errors": []
+}
