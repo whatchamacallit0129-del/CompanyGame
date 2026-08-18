@@ -1,7 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 
 public static class CompanyGameCommandAgent
@@ -29,6 +29,12 @@ public static class CompanyGameCommandAgent
         {
             string command = File.ReadAllText(commandPath).Trim();
 
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                Debug.LogWarning("[Company Game] Empty command ignored.");
+                return;
+            }
+
             bool executed = ExecuteCommand(command);
 
             if (executed)
@@ -49,394 +55,336 @@ public static class CompanyGameCommandAgent
 
     private static bool ExecuteCommand(string command)
     {
-        switch (command)
+        string[] parts = command.Split(new[] { ':' }, 2);
+        string commandName = parts[0].Trim().ToUpperInvariant();
+        string argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+
+        switch (commandName)
         {
             case "CREATE_INTERACTABLE_OBJECT":
-                CreateInteractableObject();
+                CreateInteractableObject(argument);
                 return true;
 
             case "CREATE_EMPTY_OBJECT":
-                CreateEmptyObject();
+                CreateEmptyObject(argument);
                 return true;
 
-            case "SAVE_SCENE":
-                SaveScene();
-                return true;
+            case "DELETE_OBJECT":
+                return DeleteObjectByName(argument);
+
+            case "RENAME_OBJECT":
+                return RenameObject(argument);
+
+            case "SET_ACTIVE":
+                return SetActive(argument);
+
+            case "SET_POSITION":
+                return SetPosition(argument);
+
+            case "SET_SCALE":
+                return SetScale(argument);
+
+            case "SET_ROTATION":
+                return SetRotation(argument);
+
+            case "SET_PARENT":
+                return SetParent(argument);
+
+            case "ADD_COMPONENT":
+                return AddComponent(argument);
+
+            case "REMOVE_COMPONENT":
+                return RemoveComponent(argument);
 
             default:
-
-                if (command.StartsWith("DELETE_OBJECT:"))
-                    return DeleteObjectByName(
-                        command.Substring("DELETE_OBJECT:".Length).Trim()
-                    );
-
-                if (command.StartsWith("CREATE_OBJECT:"))
-                    return CreateObject(
-                        command.Substring("CREATE_OBJECT:".Length).Trim()
-                    );
-
-                if (command.StartsWith("RENAME_OBJECT:"))
-                {
-                    string[] parts = command
-                        .Substring("RENAME_OBJECT:".Length)
-                        .Split(':');
-
-                    return parts.Length >= 2 &&
-                           RenameObject(
-                               parts[0].Trim(),
-                               parts[1].Trim()
-                           );
-                }
-
-                if (command.StartsWith("SET_POSITION:"))
-                    return SetTransform(
-                        command.Substring("SET_POSITION:".Length),
-                        "position"
-                    );
-
-                if (command.StartsWith("SET_ROTATION:"))
-                    return SetTransform(
-                        command.Substring("SET_ROTATION:".Length),
-                        "rotation"
-                    );
-
-                if (command.StartsWith("SET_SCALE:"))
-                    return SetTransform(
-                        command.Substring("SET_SCALE:".Length),
-                        "scale"
-                    );
-
-                if (command.StartsWith("DUPLICATE_OBJECT:"))
-                    return DuplicateObject(
-                        command.Substring("DUPLICATE_OBJECT:".Length).Trim()
-                    );
-
-                if (command.StartsWith("SET_PARENT:"))
-                {
-                    string[] parts = command
-                        .Substring("SET_PARENT:".Length)
-                        .Split(':');
-
-                    return parts.Length >= 2 &&
-                           SetParent(
-                               parts[0].Trim(),
-                               parts[1].Trim()
-                           );
-                }
-
-                if (command.StartsWith("ADD_COMPONENT:"))
-                {
-                    string[] parts = command
-                        .Substring("ADD_COMPONENT:".Length)
-                        .Split(':');
-
-                    return parts.Length >= 2 &&
-                           AddComponent(
-                               parts[0].Trim(),
-                               parts[1].Trim()
-                           );
-                }
-
-                if (command.StartsWith("REMOVE_COMPONENT:"))
-                {
-                    string[] parts = command
-                        .Substring("REMOVE_COMPONENT:".Length)
-                        .Split(':');
-
-                    return parts.Length >= 2 &&
-                           RemoveComponent(
-                               parts[0].Trim(),
-                               parts[1].Trim()
-                           );
-                }
-
-                Debug.LogWarning(
-                    "[Company Game] Unknown command: " + command
-                );
-
+                Debug.LogWarning("[Company Game] Unknown command: " + command);
                 return false;
         }
     }
 
-    private static bool CreateObject(string objectName)
+    private static GameObject FindObject(string objectName)
     {
-        if (string.IsNullOrEmpty(objectName))
-            return false;
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            Debug.LogWarning("[Company Game] Object name is required.");
+            return null;
+        }
 
-        if (GameObject.Find(objectName) != null)
-            return false;
+        GameObject target = GameObject.Find(objectName);
 
-        GameObject newObject = new GameObject(objectName);
+        if (target == null)
+            Debug.LogWarning("[Company Game] Object not found: " + objectName);
 
-        Undo.RegisterCreatedObjectUndo(
-            newObject,
-            "Create GameObject"
-        );
-
-        Selection.activeGameObject = newObject;
-
-        EditorUtility.SetDirty(newObject);
-
-        return true;
+        return target;
     }
 
-    private static void CreateInteractableObject()
+    private static void CreateInteractableObject(string objectName)
     {
-        GameObject interactable =
-            new GameObject("InteractableObject");
+        if (string.IsNullOrWhiteSpace(objectName))
+            objectName = "InteractableObject";
 
-        SpriteRenderer spriteRenderer =
-            interactable.AddComponent<SpriteRenderer>();
+        GameObject interactable = new GameObject(objectName);
 
-        spriteRenderer.sprite =
-            AssetDatabase.GetBuiltinExtraResource<Sprite>(
-                "Sprites/Default.sprite"
-            );
+        SpriteRenderer spriteRenderer = interactable.AddComponent<SpriteRenderer>();
+        spriteRenderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("Sprites/Default.sprite");
+        spriteRenderer.color = Color.white;
 
-        BoxCollider2D collider =
-            interactable.AddComponent<BoxCollider2D>();
-
+        BoxCollider2D collider = interactable.AddComponent<BoxCollider2D>();
         collider.size = Vector2.one;
 
         interactable.AddComponent<DraggableObject2D>();
         interactable.AddComponent<InteractableObject2D>();
 
-        Undo.RegisterCreatedObjectUndo(
-            interactable,
-            "Create Interactable Object"
-        );
-
+        Undo.RegisterCreatedObjectUndo(interactable, "Create Interactable Object");
         Selection.activeGameObject = interactable;
-
         EditorUtility.SetDirty(interactable);
+
+        Debug.Log("[Company Game] InteractableObject created: " + objectName);
     }
 
-    private static void CreateEmptyObject()
+    private static void CreateEmptyObject(string objectName)
     {
-        GameObject emptyObject =
-            new GameObject("CompanyObject");
+        if (string.IsNullOrWhiteSpace(objectName))
+            objectName = "CompanyObject";
 
-        Undo.RegisterCreatedObjectUndo(
-            emptyObject,
-            "Create Company Object"
-        );
+        GameObject emptyObject = new GameObject(objectName);
 
+        Undo.RegisterCreatedObjectUndo(emptyObject, "Create Company Object");
         Selection.activeGameObject = emptyObject;
-
         EditorUtility.SetDirty(emptyObject);
+
+        Debug.Log("[Company Game] Empty object created: " + objectName);
     }
 
     private static bool DeleteObjectByName(string objectName)
     {
-        GameObject target =
-            GameObject.Find(objectName);
-
+        GameObject target = FindObject(objectName);
         if (target == null)
             return false;
 
         Undo.DestroyObjectImmediate(target);
-
+        Debug.Log("[Company Game] Object deleted: " + objectName);
         return true;
     }
 
-    private static bool RenameObject(
-        string objectName,
-        string newName)
+    private static bool RenameObject(string argument)
     {
-        GameObject target =
-            GameObject.Find(objectName);
+        string[] values = SplitArguments(argument, 2);
+        if (values.Count != 2)
+        {
+            Debug.LogWarning("[Company Game] RENAME_OBJECT requires: oldName:newName");
+            return false;
+        }
 
-        if (target == null || string.IsNullOrEmpty(newName))
+        GameObject target = FindObject(values[0]);
+        if (target == null || string.IsNullOrWhiteSpace(values[1]))
             return false;
 
-        Undo.RecordObject(target, "Rename GameObject");
-
-        target.name = newName;
-
+        Undo.RecordObject(target, "Rename Object");
+        target.name = values[1];
         EditorUtility.SetDirty(target);
-
-        Selection.activeGameObject = target;
-
         return true;
     }
 
-    private static bool SetTransform(
-        string data,
-        string type)
+    private static bool SetActive(string argument)
     {
-        string[] parts = data.Split(':');
-
-        if (parts.Length < 4)
+        string[] values = SplitArguments(argument, 2);
+        if (values.Count != 2 || !bool.TryParse(values[1], out bool active))
+        {
+            Debug.LogWarning("[Company Game] SET_ACTIVE requires: objectName:true/false");
             return false;
+        }
 
-        GameObject target =
-            GameObject.Find(parts[0].Trim());
-
+        GameObject target = FindObject(values[0]);
         if (target == null)
             return false;
 
-        if (!float.TryParse(parts[1], out float x) ||
-            !float.TryParse(parts[2], out float y) ||
-            !float.TryParse(parts[3], out float z))
-            return false;
-
-        Undo.RecordObject(
-            target.transform,
-            "Set Transform"
-        );
-
-        Vector3 value = new Vector3(x, y, z);
-
-        if (type == "position")
-            target.transform.position = value;
-
-        else if (type == "rotation")
-            target.transform.eulerAngles = value;
-
-        else if (type == "scale")
-            target.transform.localScale = value;
-
+        Undo.RecordObject(target, "Set Active State");
+        target.SetActive(active);
         EditorUtility.SetDirty(target);
-
         return true;
     }
 
-    private static bool DuplicateObject(string objectName)
+    private static bool SetPosition(string argument)
     {
-        GameObject target =
-            GameObject.Find(objectName);
+        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
+            return false;
 
+        Undo.RecordObject(target.transform, "Set Position");
+        target.transform.position = value;
+        EditorUtility.SetDirty(target);
+        return true;
+    }
+
+    private static bool SetScale(string argument)
+    {
+        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
+            return false;
+
+        Undo.RecordObject(target.transform, "Set Scale");
+        target.transform.localScale = value;
+        EditorUtility.SetDirty(target);
+        return true;
+    }
+
+    private static bool SetRotation(string argument)
+    {
+        if (!TryGetTransformVector(argument, out GameObject target, out Vector3 value))
+            return false;
+
+        Undo.RecordObject(target.transform, "Set Rotation");
+        target.transform.eulerAngles = value;
+        EditorUtility.SetDirty(target);
+        return true;
+    }
+
+    private static bool TryGetTransformVector(
+        string argument,
+        out GameObject target,
+        out Vector3 value)
+    {
+        target = null;
+        value = Vector3.zero;
+
+        string[] values = SplitArguments(argument, 4);
+        if (values.Count != 4 ||
+            !float.TryParse(values[1], out float x) ||
+            !float.TryParse(values[2], out float y) ||
+            !float.TryParse(values[3], out float z))
+        {
+            Debug.LogWarning(
+                "[Company Game] Transform command requires: objectName:x:y:z"
+            );
+            return false;
+        }
+
+        target = FindObject(values[0]);
         if (target == null)
             return false;
 
-        GameObject duplicate =
-            UnityEngine.Object.Instantiate(target);
-
-        duplicate.name =
-            target.name + "_Copy";
-
-        Undo.RegisterCreatedObjectUndo(
-            duplicate,
-            "Duplicate GameObject"
-        );
-
-        Selection.activeGameObject = duplicate;
-
+        value = new Vector3(x, y, z);
         return true;
     }
 
-    private static bool SetParent(
-        string childName,
-        string parentName)
+    private static bool SetParent(string argument)
     {
-        GameObject child =
-            GameObject.Find(childName);
+        string[] values = SplitArguments(argument, 2);
+        if (values.Count != 2)
+        {
+            Debug.LogWarning("[Company Game] SET_PARENT requires: childName:parentName");
+            return false;
+        }
 
-        GameObject parent =
-            GameObject.Find(parentName);
-
-        if (child == null || parent == null)
+        GameObject child = FindObject(values[0]);
+        if (child == null)
             return false;
 
-        Undo.SetTransformParent(
-            child.transform,
-            parent.transform,
-            "Set Parent"
-        );
+        GameObject parent = string.IsNullOrWhiteSpace(values[1])
+            ? null
+            : FindObject(values[1]);
 
-        EditorUtility.SetDirty(child);
+        if (!string.IsNullOrWhiteSpace(values[1]) && parent == null)
+            return false;
 
+        Undo.SetTransformParent(child.transform, parent?.transform, "Set Parent");
         return true;
     }
 
-    private static bool AddComponent(
-        string objectName,
-        string componentName)
+    private static bool AddComponent(string argument)
     {
-        GameObject target =
-            GameObject.Find(objectName);
+        string[] values = SplitArguments(argument, 2);
+        if (values.Count != 2)
+        {
+            Debug.LogWarning("[Company Game] ADD_COMPONENT requires: objectName:ComponentType");
+            return false;
+        }
 
+        GameObject target = FindObject(values[0]);
         if (target == null)
             return false;
 
-        Type componentType =
-            GetComponentType(componentName);
-
-        if (componentType == null)
+        Type componentType = FindComponentType(values[1]);
+        if (componentType == null || !typeof(Component).IsAssignableFrom(componentType))
+        {
+            Debug.LogWarning("[Company Game] Component type not found: " + values[1]);
             return false;
+        }
 
         if (target.GetComponent(componentType) != null)
-            return false;
+        {
+            Debug.Log("[Company Game] Component already exists: " + values[1]);
+            return true;
+        }
 
-        Component component =
-            Undo.AddComponent(target, componentType);
-
-        return component != null;
-    }
-
-    private static bool RemoveComponent(
-        string objectName,
-        string componentName)
-    {
-        GameObject target =
-            GameObject.Find(objectName);
-
-        if (target == null)
-            return false;
-
-        Type componentType =
-            GetComponentType(componentName);
-
-        if (componentType == null)
-            return false;
-
-        Component component =
-            target.GetComponent(componentType);
-
-        if (component == null)
-            return false;
-
-        Undo.DestroyObjectImmediate(component);
-
+        Undo.AddComponent(target, componentType);
+        EditorUtility.SetDirty(target);
         return true;
     }
 
-    private static Type GetComponentType(string componentName)
+    private static bool RemoveComponent(string argument)
     {
-        switch (componentName.ToUpperInvariant())
+        string[] values = SplitArguments(argument, 2);
+        if (values.Count != 2)
         {
-            case "SPRITERENDERER":
-                return typeof(SpriteRenderer);
-
-            case "BOXCOLLIDER2D":
-                return typeof(BoxCollider2D);
-
-            case "CIRCLECOLLIDER2D":
-                return typeof(CircleCollider2D);
-
-            case "RIGIDBODY2D":
-                return typeof(Rigidbody2D);
-
-            case "CAMERA":
-                return typeof(Camera);
-
-            case "AUDIOSOURCE":
-                return typeof(AudioSource);
-
-            case "CANVAS":
-                return typeof(Canvas);
-
-            default:
-                return null;
+            Debug.LogWarning("[Company Game] REMOVE_COMPONENT requires: objectName:ComponentType");
+            return false;
         }
+
+        GameObject target = FindObject(values[0]);
+        if (target == null)
+            return false;
+
+        Type componentType = FindComponentType(values[1]);
+        if (componentType == null || !typeof(Component).IsAssignableFrom(componentType))
+        {
+            Debug.LogWarning("[Company Game] Component type not found: " + values[1]);
+            return false;
+        }
+
+        Component component = target.GetComponent(componentType);
+        if (component == null)
+        {
+            Debug.LogWarning("[Company Game] Component not found on object: " + values[1]);
+            return false;
+        }
+
+        Undo.DestroyObjectImmediate(component);
+        return true;
     }
 
-    private static void SaveScene()
+    private static Type FindComponentType(string typeName)
     {
-        EditorSceneManager.SaveOpenScenes();
+        foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                Type type = assembly.GetType(typeName);
+                if (type != null)
+                    return type;
 
-        Debug.Log(
-            "[Company Game] Current scene saved."
-        );
+                foreach (Type candidate in assembly.GetTypes())
+                {
+                    if (candidate.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase))
+                        return candidate;
+                }
+            }
+            catch (System.Reflection.ReflectionTypeLoadException)
+            {
+                // Ignore assemblies Unity cannot fully reflect during compilation.
+            }
+        }
+
+        return null;
+    }
+
+    private static List<string> SplitArguments(string argument, int expectedCount)
+    {
+        string[] raw = argument.Split(':');
+        var result = new List<string>(raw.Length);
+
+        foreach (string item in raw)
+            result.Add(item.Trim());
+
+        return result.Count == expectedCount ? result : new List<string>();
     }
 }
