@@ -11,15 +11,9 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
     public string ObjectId => objectId;
     public string ObjectType => objectType;
 
-    private void Reset()
-    {
-        if (string.IsNullOrEmpty(objectId)) EnsureIdentity(objectType);
-    }
-
-    public void EnsureId(string type)
-    {
-        EnsureIdentity(type);
-    }
+    // Intentionally no Reset/OnEnable auto-generation.
+    // The Command Agent assigns the correct category and permanent ID explicitly after adding this component.
+    public void EnsureId(string type) => EnsureIdentity(type);
 
     public void EnsureIdentity(string type)
     {
