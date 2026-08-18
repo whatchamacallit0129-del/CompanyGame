@@ -1,9 +1,10 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
-/// Runtime command layer for the prototype employee movement system.
-/// First click an employee, then click a destination. The controller delegates
-/// route calculation and movement to the employee movement component.
+/// Runtime command layer for employee movement.
+/// First click an employee, then click a destination.
+/// Uses Unity's Input System package used by this project.
 /// </summary>
 public sealed class CompanyGameEmployeeMoveController : MonoBehaviour
 {
@@ -21,6 +22,7 @@ public sealed class CompanyGameEmployeeMoveController : MonoBehaviour
     private static void Bootstrap()
     {
         if (FindFirstObjectByType<CompanyGameEmployeeMoveController>() != null) return;
+
         GameObject controllerObject = new GameObject("Company Game Employee Move Controller");
         controllerObject.AddComponent<CompanyGameEmployeeMoveController>();
     }
@@ -32,7 +34,8 @@ public sealed class CompanyGameEmployeeMoveController : MonoBehaviour
 
     private void Update()
     {
-        if (!Input.GetMouseButtonDown(0)) return;
+        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
+            return;
 
         if (mainCamera == null) mainCamera = Camera.main;
         if (mainCamera == null) return;
@@ -49,9 +52,7 @@ public sealed class CompanyGameEmployeeMoveController : MonoBehaviour
         if (selectedEmployee == null) return;
 
         if (selectedEmployee.MoveTo(world))
-        {
             Debug.Log($"[Company Game] {selectedEmployee.name} moving to {world}.");
-        }
     }
 
     private CompanyGameEmployeeMovement FindEmployeeAt(Vector3 worldPosition)
@@ -97,14 +98,18 @@ public sealed class CompanyGameEmployeeMoveController : MonoBehaviour
 
     private Vector3 GetMouseWorldPosition()
     {
-        Vector3 screen = Input.mousePosition;
-        Plane movementPlane = new Plane(Vector3.forward, new Vector3(0f, 0f, selectedEmployee != null ? selectedEmployee.transform.position.z : 0f));
+        Vector2 mousePosition = Mouse.current.position.ReadValue();
+        Plane movementPlane = new Plane(
+            Vector3.forward,
+            new Vector3(0f, 0f, selectedEmployee != null ? selectedEmployee.transform.position.z : 0f));
 
-        Ray ray = mainCamera.ScreenPointToRay(screen);
+        Ray ray = mainCamera.ScreenPointToRay(mousePosition);
         if (movementPlane.Raycast(ray, out float distance))
             return ray.GetPoint(distance);
 
-        screen.z = Mathf.Abs(mainCamera.transform.position.z);
-        return mainCamera.ScreenToWorldPoint(screen);
+        return mainCamera.ScreenToWorldPoint(new Vector3(
+            mousePosition.x,
+            mousePosition.y,
+            Mathf.Abs(mainCamera.transform.position.z)));
     }
 }
