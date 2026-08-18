@@ -3,15 +3,16 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Lobotomy-Corp-style command input: left click/drag selects employees;
-/// right click issues a move command to all selected employees.
+/// Lobotomy-Corp-inspired command input: left click/drag selects employees;
+/// right click issues one destination command to the selected group.
+/// The controller contains no employee-specific rules.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
 {
     [SerializeField] private LayerMask employeeLayer = ~0;
-    [SerializeField] private float dragThreshold = 8f;
-    [SerializeField] private float groupSpacing = 0.45f;
+    [Min(1f)] [SerializeField] private float dragThreshold = 8f;
+    [SerializeField] private bool allowBoxSelection = true;
 
     private readonly List<CompanyGameEmployeeMovement> selected = new List<CompanyGameEmployeeMovement>();
     private Camera mainCamera;
@@ -41,13 +42,13 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
             dragging = false;
         }
 
-        if (Mouse.current.leftButton.isPressed &&
+        if (allowBoxSelection && Mouse.current.leftButton.isPressed &&
             Vector2.Distance(pointerDown, Mouse.current.position.ReadValue()) >= dragThreshold)
             dragging = true;
 
         if (Mouse.current.leftButton.wasReleasedThisFrame)
         {
-            if (dragging) SelectBox(pointerDown, Mouse.current.position.ReadValue());
+            if (dragging && allowBoxSelection) SelectBox(pointerDown, Mouse.current.position.ReadValue());
             else SelectSingle(Mouse.current.position.ReadValue());
             dragging = false;
         }
@@ -77,7 +78,8 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
     {
         Vector3 a = ScreenToWorld(start);
         Vector3 b = ScreenToWorld(end);
-        Bounds bounds = new Bounds((a + b) * 0.5f, new Vector3(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y), 10f));
+        Bounds bounds = new Bounds((a + b) * 0.5f,
+            new Vector3(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y), 10f));
 
         ClearSelection();
         Collider2D[] hits = Physics2D.OverlapBoxAll(bounds.center, bounds.size, 0f, employeeLayer);
@@ -93,24 +95,47 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
     {
         Vector3 destination = ScreenToWorld(screen);
         int count = selected.Count;
+        float spacing = GetGroupSpacing();
 
         for (int i = 0; i < count; i++)
         {
             CompanyGameEmployeeMovement employee = selected[i];
             if (employee == null) continue;
 
-            Vector3 offset = count <= 1 ? Vector3.zero : FormationOffset(i, count);
-            employee.MoveTo(destination + offset);
+            employee.MoveTo(destination + FormationOffset(i, count, spacing));
         }
     }
 
-    private static Vector3 FormationOffset(int index, int count)
+    private float GetGroupSpacing()
     {
+        foreach (CompanyGameEmployeeMovement employee in selected)
+        {
+            if (employee == null) continue;
+            CompanyGameEmployeeMovementSettings settings = employee.GetComponent<CompanyGameEmployeeMovement>() != null
+                ? GetSettings(employee)
+                : null;
+            if (settings != null) return settings.GroupSpacing;
+        }
+        return 0.45f;
+    }
+
+    private static CompanyGameEmployeeMovementSettings GetSettings(CompanyGameEmployeeMovement employee)
+    {
+        var field = typeof(CompanyGameEmployeeMovement).GetField("settings",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        return field?.GetValue(employee) as CompanyGameEmployeeMovementSettings;
+    }
+
+    private static Vector3 FormationOffset(int index, int count, float spacing)
+    {
+        if (count <= 1 || spacing <= 0f) return Vector3.zero;
+
         int columns = Mathf.CeilToInt(Mathf.Sqrt(count));
         int row = index / columns;
         int column = index % columns;
-        float center = (Mathf.Min(columns, count - row * columns) - 1) * 0.5f;
-        return new Vector3((column - center) * 0.45f, -row * 0.45f, 0f);
+        int rowCount = Mathf.Min(columns, count - row * columns);
+        float center = (rowCount - 1) * 0.5f;
+        return new Vector3((column - center) * spacing, -row * spacing, 0f);
     }
 
     private void AddSelection(CompanyGameEmployeeMovement employee)
