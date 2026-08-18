@@ -1,11 +1,11 @@
 ﻿{
-  "id": "7804021ff1d178ac057416d1726a68d455dba48b2635de60935cb4c2a69b2279",
-  "command": "{\r\n  \"content\": \"CREATE_INTERACTABLE_OBJECT:직원:5\\n\",\r\n  \"encoding\": \"utf-8\"\r\n}",
-  "success": false,
-  "message": "Unknown command: {\r\n  \"CONTENT\"",
+  "id": "65ff7c2743dd80a9dc1c49f57534fb117a3622f6aedb3054277ef0b7f23cd5d5",
+  "command": "{\"content\":\"CREATE_INTERACTABLE_OBJECT:직원:5\",\"encoding\":\"utf-8\"}",
+  "success": true,
+  "message": "Created 5 interactable object(s): 직원",
   "exception": "",
-  "createdObjects": [],
-  "createdObjectIds": [],
+  "createdObjects": ["직원 (6)", "직원 (7)", "직원 (8)", "직원 (9)", "직원 (10)"],
+  "createdObjectIds": ["EMP-002396", "EMP-002397", "EMP-002398", "EMP-002399", "EMP-002400"],
   "deletedObjects": [],
   "deletedObjectIds": [],
   "renamedObjects": []
