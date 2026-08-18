@@ -22,7 +22,6 @@ function setComposerValue(composer, text) {
     composer.dispatchEvent(new Event("change", { bubbles: true }));
     return;
   }
-
   composer.textContent = text;
   composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -41,16 +40,45 @@ async function sendPrompt(prompt) {
   const composer = await waitForComposer();
   setComposerValue(composer, prompt);
   await new Promise(resolve => setTimeout(resolve, 300));
-
   const send = findSendButton();
   if (send && !send.disabled) {
     send.click();
     return;
   }
-
   composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
   composer.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
 }
+
+function extractAssistantText(node) {
+  const text = node?.innerText?.trim();
+  if (!text) return "";
+  const hasUserMarker = node.querySelector?.('[data-message-author-role="user"]');
+  const role = node.getAttribute?.('data-message-author-role');
+  if (role === "user" || hasUserMarker) return "";
+  return text;
+}
+
+let lastObservedAssistantText = "";
+let observerStarted = false;
+
+function startAssistantObserver() {
+  if (observerStarted) return;
+  observerStarted = true;
+  const scan = () => {
+    const nodes = document.querySelectorAll('[data-message-author-role="assistant"]');
+    if (!nodes.length) return;
+    const last = nodes[nodes.length - 1];
+    const text = extractAssistantText(last);
+    if (!text || text === lastObservedAssistantText) return;
+    lastObservedAssistantText = text;
+    chrome.runtime.sendMessage({ type: "assistant_response", text, timestamp: Date.now() }).catch(() => {});
+  };
+  const observer = new MutationObserver(scan);
+  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  scan();
+}
+
+startAssistantObserver();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ping") {
