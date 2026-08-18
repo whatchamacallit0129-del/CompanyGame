@@ -101,7 +101,6 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
         {
             CompanyGameEmployeeMovement employee = selected[i];
             if (employee == null) continue;
-
             employee.MoveTo(destination + FormationOffset(i, count, spacing));
         }
     }
@@ -111,19 +110,9 @@ public sealed class CompanyGameEmployeeSelectionController : MonoBehaviour
         foreach (CompanyGameEmployeeMovement employee in selected)
         {
             if (employee == null) continue;
-            CompanyGameEmployeeMovementSettings settings = employee.GetComponent<CompanyGameEmployeeMovement>() != null
-                ? GetSettings(employee)
-                : null;
-            if (settings != null) return settings.GroupSpacing;
+            if (employee.Settings != null) return employee.Settings.GroupSpacing;
         }
         return 0.45f;
-    }
-
-    private static CompanyGameEmployeeMovementSettings GetSettings(CompanyGameEmployeeMovement employee)
-    {
-        var field = typeof(CompanyGameEmployeeMovement).GetField("settings",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        return field?.GetValue(employee) as CompanyGameEmployeeMovementSettings;
     }
 
     private static Vector3 FormationOffset(int index, int count, float spacing)
