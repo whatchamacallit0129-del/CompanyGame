@@ -3,16 +3,23 @@
 ## Goal
 Build the Unity 2D company-management game with soft-coded, extensible corridor/node navigation and employee systems.
 
-## First task
+## Current task
 - task_id: employee-movement-foundation
-- Build the selection -> destination -> node pathfinding -> employee movement flow using reusable components/services.
+- Integrate reusable employee selection -> destination -> node pathfinding -> movement without employee-specific hardcoding.
 
 ## Dependencies
-- Corridor/path-node graph and connections.
-- CompanyGameNavigationGraph and path service.
+- Corridor/path-node graph and explicit connections.
+- CompanyGameNavigationGraph and CompanyGameNavigationService.
 - CompanyGameEmployeeMovement.
+- CompanyGameEmployeeSelectionController.
 - Employee identity/creation pipeline.
 - Unity Input System.
+
+## Current implementation
+- Selection controller already supports single selection, drag selection, and right-click movement commands.
+- EmployeeMovement already requests paths from the navigation graph/service and follows returned nodes.
+- Navigation graph/service are independent of corridor-specific types.
+- Added `CompanyGameEmployeeMovementBootstrap` so every runtime `EmployeeId` automatically receives the reusable movement component.
 
 ## Acceptance
 1. No employee-specific hard-coded movement logic.
@@ -22,4 +29,4 @@ Build the Unity 2D company-management game with soft-coded, extensible corridor/
 5. Design remains extensible for multiple employees, floors, and future rules.
 
 ## Verification
-Compile in Unity, run a selection/destination movement test, and preserve evidence in STATE/STATUS before completion.
+Unity compile and Play Mode verification are still required. Confirm that employees receive `CompanyGameEmployeeMovement`, selection works, a reachable right-click destination produces movement, and an unreachable destination logs a safe diagnostic. Preserve evidence in STATE/STATUS before completion.
