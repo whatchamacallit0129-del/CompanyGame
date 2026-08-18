@@ -56,11 +56,9 @@ public static class CompanyGameHierarchySorter
                 Transform parent = current.parent;
                 HierarchyGroup group = null;
 
-                // Never use a null Transform as a Dictionary key. Root objects
-                // (parent == null) are placed into their own root group.
                 foreach (HierarchyGroup candidate in groups)
                 {
-                    if (candidate.Parent == parent)
+                    if (candidate != null && candidate.Parent == parent)
                     {
                         group = candidate;
                         break;
@@ -83,30 +81,26 @@ public static class CompanyGameHierarchySorter
 
                 group.Items.Sort(CompareTransforms);
 
+                // Save the first sibling position before changing any indices.
                 int firstIndex = int.MaxValue;
                 foreach (Transform item in group.Items)
                 {
-                    if (item == null)
-                        continue;
-
-                    firstIndex = Math.Min(firstIndex, item.GetSiblingIndex());
+                    if (item != null)
+                        firstIndex = Math.Min(firstIndex, item.GetSiblingIndex());
                 }
 
                 if (firstIndex == int.MaxValue)
                     continue;
 
+                // For root objects, Unity's sibling indices use the scene's root
+                // object list. Avoid any Transform.rootCount/root API entirely.
                 for (int i = 0; i < group.Items.Count; i++)
                 {
                     Transform item = group.Items[i];
                     if (item == null)
                         continue;
 
-                    int maxIndex = group.Parent != null
-                        ? group.Parent.childCount - 1
-                        : item.rootCount - 1;
-
-                    int targetIndex = Math.Min(firstIndex + i, Math.Max(0, maxIndex));
-                    item.SetSiblingIndex(targetIndex);
+                    item.SetSiblingIndex(firstIndex + i);
                 }
             }
         }
