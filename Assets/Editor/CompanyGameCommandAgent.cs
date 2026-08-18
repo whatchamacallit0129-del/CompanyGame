@@ -10,20 +10,14 @@ using UnityEngine;
 public static class CompanyGameCommandAgent
 {
     private const string NumberRegistryKeyPrefix = "CompanyGame.NextNumber.";
-
-    private static readonly Dictionary<string, Func<CommandRequest, CommandResult>> Handlers =
-        new Dictionary<string, Func<CommandRequest, CommandResult>>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "CREATE_INTERACTABLE_OBJECT", CreateInteractableObject },
-            { "CREATE_EMPTY_OBJECT", CreateEmptyObject },
-            { "DELETE_OBJECT", DeleteObject },
-            { "RENAME_OBJECT", RenameObject }
-        };
-
-    private static string CommandFilePath
+    private static readonly Dictionary<string, Func<CommandRequest, CommandResult>> Handlers = new Dictionary<string, Func<CommandRequest, CommandResult>>(StringComparer.OrdinalIgnoreCase)
     {
-        get { return Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.json")); }
-    }
+        { "CREATE_INTERACTABLE_OBJECT", CreateInteractableObject },
+        { "CREATE_EMPTY_OBJECT", CreateEmptyObject },
+        { "DELETE_OBJECT", DeleteObject },
+        { "RENAME_OBJECT", RenameObject }
+    };
+    private static string CommandFilePath => Path.GetFullPath(Path.Combine(Application.dataPath, "..", "command.json"));
 
     [InitializeOnLoadMethod]
     private static void Initialize()
@@ -36,33 +30,25 @@ public static class CompanyGameCommandAgent
     {
         string path = CommandFilePath;
         if (!File.Exists(path)) return;
-
         try
         {
             string raw = File.ReadAllText(path, Encoding.UTF8).Trim();
             if (string.IsNullOrWhiteSpace(raw)) return;
             ExecuteAndReport(raw, path);
         }
-        catch (Exception ex)
-        {
-            Debug.LogError("[Company Game] Agent error: " + ex);
-        }
+        catch (Exception ex) { Debug.LogError("[Company Game] Agent error: " + ex); }
     }
 
     private static void ExecuteAndReport(string raw, string path)
     {
         string id = GetCommandId(raw, path);
         CommandResult result;
-        try
-        {
-            result = Execute(ParseCommand(raw));
-        }
+        try { result = Execute(ParseCommand(raw)); }
         catch (Exception ex)
         {
             result = CommandResult.Failure("Command execution exception: " + ex.Message);
             result.Exception = ex.ToString();
         }
-
         WriteResult(path, id, raw, result);
         SafeDelete(path);
         AssetDatabase.Refresh();
@@ -70,34 +56,26 @@ public static class CompanyGameCommandAgent
 
     private static string GetCommandId(string raw, string path)
     {
-        long ticks = File.GetLastWriteTimeUtc(path).Ticks;
         using (SHA256 sha = SHA256.Create())
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(raw + "|" + ticks.ToString(CultureInfo.InvariantCulture));
+            byte[] bytes = Encoding.UTF8.GetBytes(raw + "|" + File.GetLastWriteTimeUtc(path).Ticks.ToString(CultureInfo.InvariantCulture));
             StringBuilder sb = new StringBuilder();
             foreach (byte b in sha.ComputeHash(bytes)) sb.Append(b.ToString("x2"));
             return sb.ToString();
         }
     }
 
-    private static void SafeDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); }
-        catch { }
-    }
+    private static void SafeDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
 
     private sealed class CommandRequest
     {
-        public string Name;
-        public string Arguments;
+        public string Name; public string Arguments;
         public CommandRequest(string name, string arguments) { Name = name; Arguments = arguments; }
     }
 
     private sealed class CommandResult
     {
-        public bool Success;
-        public string Message;
-        public string Exception;
+        public bool Success; public string Message; public string Exception;
         public readonly List<string> CreatedObjects = new List<string>();
         public readonly List<string> CreatedObjectIds = new List<string>();
         public readonly List<string> DeletedObjects = new List<string>();
@@ -105,23 +83,14 @@ public static class CompanyGameCommandAgent
         public readonly List<string> RenamedObjects = new List<string>();
         public readonly List<LogRecord> Errors = new List<LogRecord>();
         private CommandResult(bool success, string message) { Success = success; Message = message; }
-        public static CommandResult SuccessResult(string message) { return new CommandResult(true, message); }
-        public static CommandResult Failure(string message) { return new CommandResult(false, message); }
+        public static CommandResult SuccessResult(string message) => new CommandResult(true, message);
+        public static CommandResult Failure(string message) => new CommandResult(false, message);
     }
 
     private sealed class LogRecord
     {
-        public string Type;
-        public string Message;
-        public string StackTrace;
+        public string Type; public string Message; public string StackTrace;
         public LogRecord(string type, string message, string stackTrace) { Type = type; Message = message; StackTrace = stackTrace; }
-    }
-
-    private sealed class RenamePair
-    {
-        public string OldName;
-        public string NewName;
-        public RenamePair(string oldName, string newName) { OldName = oldName; NewName = newName; }
     }
 
     private static CommandRequest ParseCommand(string raw)
@@ -133,9 +102,7 @@ public static class CompanyGameCommandAgent
     private static CommandResult Execute(CommandRequest request)
     {
         Func<CommandRequest, CommandResult> handler;
-        return Handlers.TryGetValue(request.Name, out handler)
-            ? handler(request)
-            : CommandResult.Failure("Unknown command: " + request.Name);
+        return Handlers.TryGetValue(request.Name, out handler) ? handler(request) : CommandResult.Failure("Unknown command: " + request.Name);
     }
 
     private static CommandResult CreateInteractableObject(CommandRequest request)
@@ -143,11 +110,7 @@ public static class CompanyGameCommandAgent
         string[] parts = request.Arguments.Split(':');
         string baseName = parts.Length > 0 ? parts[0].Trim() : "InteractableObject";
         if (string.IsNullOrWhiteSpace(baseName)) baseName = "InteractableObject";
-        if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
-            return CommandResult.Failure("CREATE_INTERACTABLE_OBJECT requires a count or explicit numbers.");
-
-        // Resolve the category once from the command's base name. This avoids relying on
-        // scene scanning or a secondary classifier during a batch creation.
+        if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1])) return CommandResult.Failure("CREATE_INTERACTABLE_OBJECT requires a count or explicit numbers.");
         string category = ResolveCreationCategory(baseName);
         string spec = parts[1].Trim();
         List<int> explicitNumbers;
@@ -157,10 +120,8 @@ public static class CompanyGameCommandAgent
             foreach (int n in explicitNumbers)
             {
                 if (n < 1 || !reserved.Add(n)) return CommandResult.Failure("Invalid or duplicate object number: " + n);
-                if (FindSceneObjectByExactName(baseName + " (" + n + ")") != null)
-                    return CommandResult.Failure("Object already exists: " + baseName + " (" + n + ")");
+                if (FindSceneObjectByExactName(baseName + " (" + n + ")") != null) return CommandResult.Failure("Object already exists: " + baseName + " (" + n + ")");
             }
-
             CommandResult result = CommandResult.SuccessResult("Created " + explicitNumbers.Count + " interactable object(s): " + baseName);
             foreach (int n in explicitNumbers)
             {
@@ -169,18 +130,14 @@ public static class CompanyGameCommandAgent
                 result.CreatedObjects.Add(name);
                 AddIdentityResult(result, go);
             }
-
             int highest = 0;
             foreach (int n in explicitNumbers) if (n > highest) highest = n;
             int next = GetNextNumberedIndex(baseName);
             if (next <= highest) SetNextNumber(baseName, highest + 1);
             return result;
         }
-
         int count;
-        if (!int.TryParse(spec, NumberStyles.Integer, CultureInfo.InvariantCulture, out count) || count < 1 || count > 1000)
-            return CommandResult.Failure("Count must be 1-1000, or explicit numbers such as 7,9.");
-
+        if (!int.TryParse(spec, NumberStyles.Integer, CultureInfo.InvariantCulture, out count) || count < 1 || count > 1000) return CommandResult.Failure("Count must be 1-1000, or explicit numbers such as 7,9.");
         int nextNumber = GetNextNumberedIndex(baseName);
         CommandResult created = CommandResult.SuccessResult("Created " + count + " interactable object(s): " + baseName);
         for (int i = 0; i < count; i++)
@@ -217,7 +174,7 @@ public static class CompanyGameCommandAgent
         foreach (string part in text.Split(','))
         {
             int n;
-            if (!int.TryParse(part.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) return false;
+            if (!int.TryParse(part.Trim(), out n)) return false;
             numbers.Add(n);
         }
         return numbers.Count > 0;
@@ -233,10 +190,7 @@ public static class CompanyGameCommandAgent
         return next;
     }
 
-    private static void SetNextNumber(string baseName, int next)
-    {
-        EditorPrefs.SetInt(NumberRegistryKeyPrefix + baseName, Math.Max(1, next));
-    }
+    private static void SetNextNumber(string baseName, int next) { EditorPrefs.SetInt(NumberRegistryKeyPrefix + baseName, Math.Max(1, next)); }
 
     private static GameObject CreateSingleInteractable(string name, string category)
     {
@@ -244,10 +198,8 @@ public static class CompanyGameCommandAgent
         Undo.AddComponent<BoxCollider2D>(go);
         TryAddComponentByName(go, "DraggableObject2D");
         TryAddComponentByName(go, "InteractableObject2D");
-
         CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
         identity.EnsureIdentity(category);
-
         Undo.RegisterCreatedObjectUndo(go, "Create Interactable Object");
         EditorUtility.SetDirty(go);
         return go;
@@ -260,93 +212,54 @@ public static class CompanyGameCommandAgent
         CompanyGameObjectIdentity identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
         identity.EnsureIdentity(ResolveCreationCategory(name));
         Undo.RegisterCreatedObjectUndo(go, "Create Company Object");
-
         CommandResult result = CommandResult.SuccessResult("Created object: " + name);
-        result.CreatedObjects.Add(name);
-        AddIdentityResult(result, go);
-        return result;
+        result.CreatedObjects.Add(name); AddIdentityResult(result, go); return result;
     }
 
     private static CommandResult DeleteObject(CommandRequest request)
     {
-        string[] values = request.Arguments.Split(':');
-        string selector = values[0].Trim();
-        int count = values.Length > 1 ? ParseCount(values[1]) : 1;
+        string[] values = request.Arguments.Split(':'); string selector = values[0].Trim(); int count = values.Length > 1 ? ParseCount(values[1]) : 1;
         if (count < 1) return CommandResult.Failure("Count must be positive.");
-
         if (IsIdSelector(selector))
         {
-            GameObject byId = FindObject(selector);
-            if (byId == null) return CommandResult.Failure("Object ID not found: " + selector);
-            CommandResult one = CommandResult.SuccessResult("Deleted object: " + byId.name);
-            AddDeletedResult(one, byId);
-            Undo.DestroyObjectImmediate(byId);
-            return one;
+            GameObject byId = FindObject(selector); if (byId == null) return CommandResult.Failure("Object ID not found: " + selector);
+            CommandResult one = CommandResult.SuccessResult("Deleted object: " + byId.name); AddDeletedResult(one, byId); Undo.DestroyObjectImmediate(byId); return one;
         }
-
-        List<GameObject> matches = FindByPrefix(selector);
-        if (matches.Count == 0) return CommandResult.Failure("No objects matched: " + selector);
-        if (count > matches.Count) count = matches.Count;
-        matches.Sort((a, b) => b.name.CompareTo(a.name));
-
+        List<GameObject> matches = FindByPrefix(selector); if (matches.Count == 0) return CommandResult.Failure("No objects matched: " + selector);
+        if (count > matches.Count) count = matches.Count; matches.Sort((a, b) => b.name.CompareTo(a.name));
         CommandResult result = CommandResult.SuccessResult("Deleted " + count + " object(s): " + selector);
-        for (int i = 0; i < count; i++)
-        {
-            GameObject go = matches[i];
-            AddDeletedResult(result, go);
-            Undo.DestroyObjectImmediate(go);
-        }
+        for (int i = 0; i < count; i++) { GameObject go = matches[i]; AddDeletedResult(result, go); Undo.DestroyObjectImmediate(go); }
         return result;
     }
 
     private static void AddDeletedResult(CommandResult result, GameObject go)
     {
-        if (go == null) return;
-        result.DeletedObjects.Add(go.name);
-        CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
+        if (go == null) return; result.DeletedObjects.Add(go.name); CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
         if (identity != null && !string.IsNullOrEmpty(identity.ObjectId)) result.DeletedObjectIds.Add(identity.ObjectId);
     }
 
     private static CommandResult RenameObject(CommandRequest request)
     {
-        string[] parts = request.Arguments.Split(':');
-        if (parts.Length < 2) return CommandResult.Failure("RENAME_OBJECT requires old name and new name.");
-        string selector = parts[0].Trim();
-        string newName = parts[1].Trim();
-        if (string.IsNullOrWhiteSpace(newName)) return CommandResult.Failure("New name cannot be empty.");
-        GameObject go = FindObject(selector);
-        if (go == null) return CommandResult.Failure("Object not found: " + selector);
-        string oldName = go.name;
-        Undo.RecordObject(go, "Rename Object");
-        go.name = newName;
-        EditorUtility.SetDirty(go);
-        CommandResult result = CommandResult.SuccessResult("Renamed object: " + oldName + " -> " + newName);
-        result.RenamedObjects.Add(oldName + " -> " + newName);
-        return result;
+        string[] parts = request.Arguments.Split(':'); if (parts.Length < 2) return CommandResult.Failure("RENAME_OBJECT requires old name and new name.");
+        string selector = parts[0].Trim(), newName = parts[1].Trim(); if (string.IsNullOrWhiteSpace(newName)) return CommandResult.Failure("New name cannot be empty.");
+        GameObject go = FindObject(selector); if (go == null) return CommandResult.Failure("Object not found: " + selector);
+        string oldName = go.name; Undo.RecordObject(go, "Rename Object"); go.name = newName; EditorUtility.SetDirty(go);
+        CommandResult result = CommandResult.SuccessResult("Renamed object: " + oldName + " -> " + newName); result.RenamedObjects.Add(oldName + " -> " + newName); return result;
     }
 
-    private static int ParseCount(string value)
-    {
-        int count;
-        return int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out count) ? count : 0;
-    }
+    private static int ParseCount(string value) { int count; return int.TryParse(value.Trim(), out count) ? count : 0; }
 
     private static bool IsIdSelector(string selector)
     {
-        return selector.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) ||
-               selector.StartsWith("ROOM-", StringComparison.OrdinalIgnoreCase) ||
-               selector.StartsWith("DEPT-", StringComparison.OrdinalIgnoreCase) ||
-               selector.StartsWith("MACH-", StringComparison.OrdinalIgnoreCase) ||
-               selector.StartsWith("OBJ-", StringComparison.OrdinalIgnoreCase);
+        return selector.StartsWith("EMP-", StringComparison.OrdinalIgnoreCase) || selector.StartsWith("ROOM-", StringComparison.OrdinalIgnoreCase) || selector.StartsWith("DEPT-", StringComparison.OrdinalIgnoreCase) || selector.StartsWith("MACH-", StringComparison.OrdinalIgnoreCase) || selector.StartsWith("OBJ-", StringComparison.OrdinalIgnoreCase);
     }
 
     private static GameObject FindObject(string selector)
     {
         if (IsIdSelector(selector))
         {
-            CompanyGameObjectIdentity[] identities = UnityEngine.Object.FindObjectsByType<CompanyGameObjectIdentity>(FindObjectsSortMode.None);
-            foreach (CompanyGameObjectIdentity identity in identities)
-                if (identity != null && string.Equals(identity.ObjectId, selector, StringComparison.OrdinalIgnoreCase)) return identity.gameObject;
+            CompanyGameObjectIdentity[] identities = UnityEngine.Object.FindObjectsByType<CompanyGameObjectIdentity>(FindObjectsInactive.Include);
+            foreach (CompanyGameObjectIdentity identity in identities) if (identity != null && string.Equals(identity.ObjectId, selector, StringComparison.OrdinalIgnoreCase)) return identity.gameObject;
             return null;
         }
         return FindSceneObjectByExactName(selector);
@@ -355,86 +268,45 @@ public static class CompanyGameCommandAgent
     private static List<GameObject> FindByPrefix(string prefix)
     {
         List<GameObject> result = new List<GameObject>();
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        foreach (GameObject go in objects)
-            if (go != null && go.name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) result.Add(go);
+        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include);
+        foreach (GameObject go in objects) if (go != null && go.name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) result.Add(go);
         return result;
     }
 
     private static GameObject FindSceneObjectByExactName(string name)
     {
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        foreach (GameObject go in objects)
-            if (go != null && string.Equals(go.name, name, StringComparison.Ordinal)) return go;
+        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include);
+        foreach (GameObject go in objects) if (go != null && string.Equals(go.name, name, StringComparison.Ordinal)) return go;
         return null;
     }
 
     private static void TryAddComponentByName(GameObject go, string typeName)
     {
-        Type type = FindType(typeName);
-        if (type != null && typeof(Component).IsAssignableFrom(type))
+        Type type = FindType(typeName); if (type != null && typeof(Component).IsAssignableFrom(type))
         {
-            try { Undo.AddComponent(go, type); }
-            catch (Exception ex) { Debug.LogWarning("[Company Game] Optional component " + typeName + " was not added: " + ex.Message); }
+            try { Undo.AddComponent(go, type); } catch (Exception ex) { Debug.LogWarning("[Company Game] Optional component " + typeName + " was not added: " + ex.Message); }
         }
     }
 
     private static Type FindType(string typeName)
     {
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            Type type = assembly.GetType(typeName);
-            if (type != null) return type;
-        }
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies()) { Type type = assembly.GetType(typeName); if (type != null) return type; }
         return null;
     }
 
     private static void WriteResult(string projectPath, string id, string raw, CommandResult result)
     {
-        string resultsDir = Path.Combine(projectPath, "results");
-        Directory.CreateDirectory(resultsDir);
-        string path = Path.Combine(resultsDir, "result.json");
-        StringBuilder sb = new StringBuilder();
-        sb.AppendLine("{");
-        sb.AppendLine("  \"id\": \"" + Escape(id) + "\",");
-        sb.AppendLine("  \"command\": \"" + Escape(raw) + "\",");
-        sb.AppendLine("  \"success\": " + (result.Success ? "true" : "false") + ",");
-        sb.AppendLine("  \"message\": \"" + Escape(result.Message) + "\",");
-        sb.AppendLine("  \"exception\": \"" + Escape(result.Exception ?? "") + "\",");
-        WriteStringArray(sb, "createdObjects", result.CreatedObjects, true);
-        WriteStringArray(sb, "createdObjectIds", result.CreatedObjectIds, true);
-        WriteStringArray(sb, "deletedObjects", result.DeletedObjects, true);
-        WriteStringArray(sb, "deletedObjectIds", result.DeletedObjectIds, true);
-        WriteStringArray(sb, "renamedObjects", result.RenamedObjects, true);
-        sb.AppendLine("  \"errors\": [");
-        for (int i = 0; i < result.Errors.Count; i++)
-        {
-            LogRecord e = result.Errors[i];
-            sb.Append("    {\"type\":\"").Append(Escape(e.Type)).Append("\",\"message\":\"").Append(Escape(e.Message)).Append("\",\"stackTrace\":\"").Append(Escape(e.StackTrace)).Append("\"}");
-            if (i < result.Errors.Count - 1) sb.Append(',');
-            sb.AppendLine();
-        }
-        sb.AppendLine("  ]");
-        sb.AppendLine("}");
-        File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
+        string resultsDir = Path.Combine(projectPath, "results"); Directory.CreateDirectory(resultsDir); string path = Path.Combine(resultsDir, "result.json");
+        StringBuilder sb = new StringBuilder(); sb.AppendLine("{");
+        sb.AppendLine("  \"id\": \"" + Escape(id) + "\","); sb.AppendLine("  \"command\": \"" + Escape(raw) + "\","); sb.AppendLine("  \"success\": " + (result.Success ? "true" : "false") + ","); sb.AppendLine("  \"message\": \"" + Escape(result.Message) + "\","); sb.AppendLine("  \"exception\": \"" + Escape(result.Exception ?? "") + "\",");
+        WriteStringArray(sb, "createdObjects", result.CreatedObjects, true); WriteStringArray(sb, "createdObjectIds", result.CreatedObjectIds, true); WriteStringArray(sb, "deletedObjects", result.DeletedObjects, true); WriteStringArray(sb, "deletedObjectIds", result.DeletedObjectIds, true); WriteStringArray(sb, "renamedObjects", result.RenamedObjects, false);
+        sb.AppendLine("}"); File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
     }
 
-    private static void WriteStringArray(StringBuilder sb, string key, List<string> values, bool comma)
+    private static void WriteStringArray(StringBuilder sb, string name, List<string> values, bool commaAfter)
     {
-        sb.Append("  \"").Append(key).Append("\": [");
-        for (int i = 0; i < values.Count; i++)
-        {
-            if (i > 0) sb.Append(',');
-            sb.Append("\"").Append(Escape(values[i])).Append("\"");
-        }
-        sb.Append(']');
-        if (comma) sb.Append(',');
-        sb.AppendLine();
+        sb.Append("  \"").Append(name).Append("\": ["); for (int i = 0; i < values.Count; i++) { if (i > 0) sb.Append(", "); sb.Append("\"").Append(Escape(values[i])).Append("\""); } sb.Append("]"); if (commaAfter) sb.Append(","); sb.AppendLine();
     }
 
-    private static string Escape(string value)
-    {
-        if (string.IsNullOrEmpty(value)) return "";
-        return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
-    }
+    private static string Escape(string value) { return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n"); }
 }
