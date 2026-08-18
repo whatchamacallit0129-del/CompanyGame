@@ -1,12 +1,27 @@
 const CHATGPT_URL = "https://chatgpt.com/";
 const CHATGPT_HOSTS = ["chatgpt.com", "www.chatgpt.com"];
+const STORAGE_KEY = "companygame_rerun_state";
+const DEFAULT_STATE = { running: false, sequence: 0, taskId: "", status: "stopped", lastError: "", lastResponse: "", lastResponseAt: 0, startedAt: 0 };
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  const current = await chrome.storage.local.get(STORAGE_KEY);
+  if (!current[STORAGE_KEY]) await chrome.storage.local.set({ [STORAGE_KEY]: DEFAULT_STATE });
 });
 
 function isChatGPTTab(tab) {
   return !!tab?.url && CHATGPT_HOSTS.some(host => tab.url.startsWith(`https://${host}/`));
+}
+
+async function getState() {
+  const data = await chrome.storage.local.get(STORAGE_KEY);
+  return { ...DEFAULT_STATE, ...(data[STORAGE_KEY] || {}) };
+}
+
+async function setState(patch) {
+  const state = { ...(await getState()), ...patch };
+  await chrome.storage.local.set({ [STORAGE_KEY]: state });
+  return state;
 }
 
 async function findOrCreateChatGPTTab() {
@@ -41,12 +56,36 @@ async function sendPrompt(prompt) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "send_prompt") {
-    sendPrompt(String(message.prompt || ""))
-      .then(sendResponse)
-      .catch(error => sendResponse({ ok: false, error: error?.message || String(error) }));
+  if (message?.type === "get_state") {
+    getState().then(state => sendResponse({ ok: true, state }));
     return true;
   }
+
+  if (message?.type === "set_state") {
+    setState(message.patch || {}).then(state => sendResponse({ ok: true, state }));
+    return true;
+  }
+
+  if (message?.type === "send_prompt") {
+    sendPrompt(String(message.prompt || ""))
+      .then(async result => {
+        await setState({ status: "continue", lastError: "" });
+        sendResponse(result);
+      })
+      .catch(async error => {
+        const text = error?.message || String(error);
+        await setState({ status: "blocked", lastError: text });
+        sendResponse({ ok: false, error: text });
+      });
+    return true;
+  }
+
+  if (message?.type === "assistant_response") {
+    const text = String(message.text || "");
+    setState({ lastResponse: text, lastResponseAt: message.timestamp || Date.now() }).catch(() => {});
+    return;
+  }
+
   if (message?.type === "test_connection") {
     sendPrompt("RERUN_TEST_OK — CompanyGame Rerun 연결 테스트입니다.")
       .then(sendResponse)
