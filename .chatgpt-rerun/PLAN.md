@@ -1,97 +1,86 @@
 # Rerun Plan
 
 ## Overall Project Goal
-Build the Unity 2D company-management simulation as a soft-coded, modular, extensible system. Preserve the existing overall roadmap: company management, corridor/process infrastructure, employees, production systems, day progression, policies, events, and later world/story systems. Do not replace the broader plan with a narrow movement-only project.
+Build the Unity 2D company-management simulation as a soft-coded, modular, extensible system. Preserve the existing roadmap: company management, corridor/process infrastructure, employees, production systems, day progression, policies, events, and later world/story systems.
 
 ## Current Development Focus
-The immediate development focus is **Corridor/Node infrastructure + Employee Movement**. Rerun should repeatedly work toward making these two foundations reliable and testable before moving on to later gameplay systems.
+The immediate focus is **Corridor/Node infrastructure + Employee Movement**. These foundations must become reliable, understandable, visible, and testable before later gameplay systems.
 
-### Task A — Corridor / Node System
-Build and refine a reusable corridor and navigation-node system.
+## Architecture Audit
+Completed in `ARCHITECTURE.md`. The audit confirms the existing separation between corridor/node authoring, shared navigation, employee movement, and employee selection. Existing verified movement/navigation source was preserved.
 
-Requirements:
-- Corridors are reusable scene components rather than one-off hard-coded objects.
+## Task A — Corridor / Node System
+Build and refine reusable corridor and navigation-node infrastructure.
+- Corridors are reusable scene components, not one-off hard-coded objects.
 - Nodes belong to corridors and can be created/edited through reusable tooling.
-- Corridor-to-corridor connection should be simple and understandable: select a corridor, enter edit mode, then select another corridor to connect them.
-- Connected node visualization should remain clear: unconnected/available nodes use a distinct blue state and connected nodes use a distinct green state.
-- Nodes and connections must represent actual navigation data, not only editor visuals.
-- The navigation graph must not depend on a specific corridor implementation.
-- Support multiple corridors, branches, junctions, and future floors without rewriting movement code.
-- Provide useful editor visualization/toggles so corridors/nodes remain visible while editing.
-- Avoid requiring the user to manually place a matching node on both corridors just to establish a connection.
+- Corridor connection should be simple: select corridor, enter edit mode, select another corridor.
+- Unconnected/available nodes are visually blue; connected nodes are visually green.
+- Connections must create real navigation data, not only editor visuals.
+- Navigation must not depend on a specific corridor implementation.
+- Support multiple corridors, branches, junctions, and future floors.
+- Keep corridors/nodes visible with useful editor visualization/toggles.
+- Do not require matching manually placed nodes merely to connect corridors.
 
 Acceptance criteria:
-1. Multiple corridors can exist simultaneously and remain visible.
+1. Multiple corridors remain visible simultaneously.
 2. Nodes can be added to any corridor through reusable tooling.
-3. Two corridors can be connected through the intended edit-mode interaction.
-4. Connection state is visibly obvious.
-5. Navigation code can query the resulting graph without knowing which corridor created a node.
-6. Existing verified corridor/node functionality is preserved unless a concrete bug requires a change.
+3. Corridors can be connected through the intended edit-mode interaction.
+4. Connection state is obvious.
+5. Navigation queries the resulting shared graph without corridor-specific assumptions.
+6. Existing verified corridor/node functionality is preserved unless a concrete bug requires change.
 
-### Task B — Employee Movement System
-Build a reusable employee movement system inspired by the **interaction model and practical feel of Lobotomy Corporation**, without copying proprietary code or assets.
-
-Target interaction:
+## Task B — Employee Movement System
+Build reusable employee movement inspired by the **interaction model and practical feel of Lobotomy Corporation**, without copying proprietary code or assets.
 - Select one employee by clicking them.
-- The selected employee has clear visual feedback.
+- Selected employees have clear visual feedback.
 - Click a valid corridor/node destination to issue a movement order.
-- The employee finds a path through the connected Node graph.
-- The employee follows the path automatically.
-- Movement should support corridor branches and future multi-floor navigation.
-- Invalid/unreachable destinations should fail gracefully and provide clear feedback rather than silently doing nothing.
-- The player should not need to manually manipulate individual nodes to make an employee move.
-- The system should be simple enough that the user can understand and operate it without technical knowledge.
+- Employee finds a path through the connected Node graph and follows it automatically.
+- Branches and future multi-floor navigation must remain possible.
+- Invalid/unreachable destinations fail gracefully with understandable feedback.
+- Player should not manually manipulate nodes for routine employee movement.
+- Multiple employees must use the same navigation system independently.
 
-The implementation should be modular:
-- Employee selection is separate from movement.
-- Movement is separate from navigation/pathfinding.
-- Navigation is separate from corridor/editor tooling.
-- Employee identity/data is separate from movement behavior.
-- Input handling is separate from pathfinding logic.
-- Runtime movement should be data-driven and configurable rather than employee-specific hardcoding.
+Keep these responsibilities separate:
+- employee selection
+- movement
+- navigation/pathfinding
+- corridor/editor tooling
+- employee identity/data
+- input handling
 
-Movement configuration should be soft-coded where practical, including:
-- movement speed
-- stopping distance
-- path-following tolerance
-- destination validation
-- movement priorities/queues where needed later
-- animation hooks
-- blocked/unreachable behavior
-- future floor/transition behavior
+Soft-coded movement configuration should cover speed, stopping distance, path tolerance, destination validation, future priorities/queues, animation hooks, blocked/unreachable behavior, and floor transitions.
 
 Acceptance criteria:
-1. A runtime employee can be selected.
-2. A destination can be selected through the intended player interaction.
-3. A path is generated from the shared Node graph.
-4. The employee visibly moves along that path.
-5. Multiple employees can use the same navigation system independently.
+1. Runtime employee can be selected.
+2. Destination can be selected through player interaction.
+3. Shared Node graph produces the path.
+4. Employee visibly follows the path.
+5. Multiple employees work independently.
 6. No employee-specific movement code is required.
-7. Invalid/unreachable movement requests produce understandable feedback.
-8. The implementation remains extensible for later work/production/AI systems.
+7. Invalid/unreachable requests provide clear feedback.
+8. Architecture remains extensible for work/production/AI.
 
 ## Testing / Iteration Loop
-Rerun may repeatedly inspect, implement, test, and repair these systems. When an error is encountered:
-1. Inspect the actual source and result/error information.
-2. Identify the root cause.
-3. Make the smallest modular fix that preserves existing behavior.
+When an error appears:
+1. Inspect actual source and result/error information.
+2. Identify root cause.
+3. Make the smallest modular fix that preserves behavior.
 4. Re-check dependent systems.
-5. Record what was verified and what remains unverified.
+5. Record verified and unverified results.
 
-Do not claim Unity runtime success from GitHub source inspection alone. Runtime behavior must be validated through Unity/available test output.
+Do not claim Unity runtime success from GitHub inspection alone.
 
 ## Visibility / Usability
-All editor tools and runtime feedback should prioritize readability. Visual states, selected objects, nodes, connections, destinations, and movement targets should be obvious at a glance. Prefer simple interactions over technically sophisticated workflows when both are possible.
+Prioritize readable editor/runtime feedback. Selected objects, nodes, connections, destinations, and movement states should be obvious at a glance. Prefer simple interactions over technically sophisticated workflows when both work.
 
 ## Soft-Coding Rules
-- Avoid hard-coded employee names, object instance IDs, scene-specific coordinates, or one-off object references.
+- Avoid hard-coded employee names, instance IDs, scene-specific coordinates, and one-off object references.
 - Prefer reusable components, interfaces/services, serialized configuration, data assets, registries, and graph queries.
-- New systems should depend on abstractions rather than concrete corridor instances.
-- Existing command/Unity automation may be used, but do not redesign or modify the Rerun extension itself as part of this plan.
-- Preserve compatibility with the existing Command Agent and Auto Pull pipeline.
+- Depend on abstractions rather than concrete corridor instances.
+- Preserve compatibility with Command Agent and Auto Pull.
+- Do not modify the Rerun extension/program itself.
 
 ## Overall Roadmap After Movement Foundation
-The broader roadmap remains intact. After Corridor/Node + Employee Movement are reliable, continue toward:
 1. Employee work/assignment system.
 2. Production/process infrastructure.
 3. Resource/material flow.
@@ -100,15 +89,21 @@ The broader roadmap remains intact. After Corridor/Node + Employee Movement are 
 6. Policies and decision windows.
 7. Events, investigations, and reputation.
 8. Story/worldbuilding progression and ethical dilemma systems.
-9. Expansion to additional departments/floors/process chains.
+9. Additional departments/floors/process chains.
 
 ## Safety Constraints
-- Do not modify the Rerun extension/program itself unless the user explicitly asks for that.
+- Do not modify the Rerun extension/program itself unless explicitly requested.
 - Do not delete or rename verified gameplay systems merely for cleanup.
-- Do not change Unity project settings unless required and explicitly justified.
-- Before risky gameplay source changes, create or update a clearly named backup snapshot outside the Rerun extension.
+- Do not change Unity project settings unless required and justified.
+- Before risky gameplay source changes, create a clearly named backup snapshot outside the Rerun extension.
 - Prefer additive, modular changes.
-- Never use a `working` control status.
+- Never use `working` control status.
 
 ## Existing Backup
-A pre-workflow-change snapshot exists at `.chatgpt-rerun/BACKUP-20260819-seq0.md`. Preserve it. Additional backups should be clearly named and should not overwrite historical snapshots.
+`.chatgpt-rerun/BACKUP-20260819-seq0.md` is the historical pre-workflow-change snapshot. Preserve it. Additional backups must have unique names.
+
+## Current Task
+`corridor-node-authoring`
+
+## Current Acceptance Focus
+Verify/refine reusable corridor/node authoring and connection workflow, preserving existing navigation data and preparing reliable runtime movement tests.
