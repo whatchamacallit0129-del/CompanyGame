@@ -4,10 +4,6 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 
-/// <summary>
-/// Deterministic Play Mode smoke test for the employee Node movement pipeline.
-/// Disabled by default; the Editor test tool creates this component explicitly.
-/// </summary>
 public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
 {
     [SerializeField] private float timeoutSeconds = 12f;
@@ -18,23 +14,39 @@ public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
     private float elapsed;
     private int startNodeCount;
     private int pathNodeCount;
+    private bool started;
 
     public void Configure(CompanyGameEmployeeMovement targetEmployee, Vector3 targetDestination, int expectedPathNodeCount)
     {
         employee = targetEmployee;
         destination = targetDestination;
         pathNodeCount = expectedPathNodeCount;
-        startNodeCount = CompanyGameNavigationGraph.Instance.Nodes.Count;
     }
 
-    private void Update()
+    private void Start()
     {
-        elapsed += Time.deltaTime;
+        startNodeCount = CompanyGameNavigationGraph.Instance.Nodes.Count;
         if (employee == null)
         {
             Fail("Employee movement component was not created.");
             return;
         }
+
+        started = employee.MoveTo(destination);
+        if (!started)
+        {
+            Fail("Employee could not build a reachable path to the destination.");
+            return;
+        }
+
+        pathNodeCount = employee.CurrentPath != null ? employee.CurrentPath.Nodes.Count : 0;
+        Debug.Log("[Company Game] Movement smoke test path accepted. Nodes=" + pathNodeCount);
+    }
+
+    private void Update()
+    {
+        elapsed += Time.deltaTime;
+        if (!started || employee == null) return;
 
         if (employee.CurrentPath != null && employee.CurrentPath.IsValid)
             pathNodeCount = employee.CurrentPath.Nodes.Count;
@@ -62,10 +74,8 @@ public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
         {
             string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
             if (string.IsNullOrEmpty(projectRoot)) return;
-
             string resultsDirectory = Path.Combine(projectRoot, "results");
             Directory.CreateDirectory(resultsDirectory);
-
             string path = Path.Combine(resultsDirectory, "result.json");
             string json = "{\n" +
                           "  \"success\": " + (success ? "true" : "false") + ",\n" +
@@ -76,7 +86,6 @@ public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
                           "  \"pathNodeCount\": " + pathNodeCount.ToString(CultureInfo.InvariantCulture) + ",\n" +
                           "  \"destination\": { \"x\": " + destination.x.ToString("F4", CultureInfo.InvariantCulture) + ", \"y\": " + destination.y.ToString("F4", CultureInfo.InvariantCulture) + ", \"z\": " + destination.z.ToString("F4", CultureInfo.InvariantCulture) + " }\n" +
                           "}\n";
-
             string temp = path + ".tmp";
             File.WriteAllText(temp, json, new UTF8Encoding(false));
             if (File.Exists(path)) File.Delete(path);
@@ -89,12 +98,5 @@ public sealed class CompanyGameEmployeeMovementSmokeTest : MonoBehaviour
         }
     }
 
-    private static string Escape(string value)
-    {
-        return (value ?? string.Empty)
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\r", "\\r")
-            .Replace("\n", "\\n");
-    }
+    private static string Escape(string value) => (value ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n");
 }
