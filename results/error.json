@@ -1,7 +1,7 @@
 {
   "success": false,
   "type": "Exception",
-  "timestamp": "2026-08-18 18:54:25.139",
+  "timestamp": "2026-08-18 18:56:24.871",
   "message": "NullReferenceException: Object reference not set to an instance of an object",
   "stackTrace": "CompanyGameIdentityClassifier.ClassifySceneObjects () (at Assets/Editor/CompanyGameIdentityClassifier.cs:34)\nUnityEditor.EditorApplication.Internal_CallHierarchyHasChanged () (at <da871bb30d6448e2981f366171b14bb9>:0)\n"
 }
