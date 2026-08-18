@@ -39,7 +39,6 @@ public static class CompanyGameCommandAgent
     {
         string projectPath = Directory.GetParent(Application.dataPath).FullName;
         string commandPath = Path.Combine(projectPath, CommandFileName);
-
         if (!File.Exists(commandPath)) return;
 
         try
@@ -47,8 +46,7 @@ public static class CompanyGameCommandAgent
             string command = File.ReadAllText(commandPath).Trim();
             if (string.IsNullOrWhiteSpace(command)) return;
 
-            bool executed = ExecuteCommand(command);
-            if (executed)
+            if (ExecuteCommand(command))
             {
                 File.Delete(commandPath);
                 AssetDatabase.Refresh();
@@ -65,13 +63,11 @@ public static class CompanyGameCommandAgent
     {
         ParsedCommand parsed = ParseCommand(rawCommand);
         if (parsed == null) return false;
-
         if (!CommandHandlers.TryGetValue(parsed.Name, out Func<string, bool> handler))
         {
             Debug.LogWarning("[Company Game] Unknown command: " + parsed.Name);
             return false;
         }
-
         return handler(parsed.Arguments);
     }
 
@@ -99,7 +95,10 @@ public static class CompanyGameCommandAgent
     }
 
     // CREATE_INTERACTABLE_OBJECT:name[:count]
+    // count means "add this many", not "make the total equal to this number".
     // Example: CREATE_INTERACTABLE_OBJECT:권재민:3
+    // First call -> 권재민 (1), (2), (3)
+    // Next call with :7 -> 권재민 (4) ... (10)
     private static bool CreateInteractableObject(string arguments)
     {
         string[] values = arguments.Split(':');
@@ -119,28 +118,54 @@ public static class CompanyGameCommandAgent
             return false;
         }
 
-        for (int i = 0; i < count; i++)
+        if (count == 1 && FindObject(objectName) == null)
         {
-            string finalName = count == 1 ? objectName : objectName + " (" + (i + 1) + ")";
-            GameObject interactable = new GameObject(finalName);
-
-            SpriteRenderer spriteRenderer = interactable.AddComponent<SpriteRenderer>();
-            spriteRenderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("Sprites/Default.sprite");
-            spriteRenderer.color = Color.white;
-
-            BoxCollider2D collider = interactable.AddComponent<BoxCollider2D>();
-            collider.size = Vector2.one;
-
-            TryAddComponentByName(interactable, "DraggableObject2D");
-            TryAddComponentByName(interactable, "InteractableObject2D");
-
-            Undo.RegisterCreatedObjectUndo(interactable, "Create Interactable Object");
-            EditorUtility.SetDirty(interactable);
+            CreateSingleInteractable(objectName);
+            Selection.activeGameObject = GameObject.Find(objectName);
+            Debug.Log("[Company Game] InteractableObject created: " + objectName);
+            return true;
         }
 
-        Selection.activeGameObject = GameObject.Find(count == 1 ? objectName : objectName + " (1)");
-        Debug.Log("[Company Game] InteractableObject created: " + objectName + " x" + count);
+        int nextIndex = GetNextNumberedIndex(objectName);
+        GameObject firstCreated = null;
+
+        for (int i = 0; i < count; i++)
+        {
+            string finalName = objectName + " (" + (nextIndex + i) + ")";
+            GameObject interactable = CreateSingleInteractable(finalName);
+            if (firstCreated == null) firstCreated = interactable;
+        }
+
+        Selection.activeGameObject = firstCreated;
+        Debug.Log("[Company Game] InteractableObjects added: " + objectName + " x" + count);
         return true;
+    }
+
+    private static GameObject CreateSingleInteractable(string objectName)
+    {
+        GameObject interactable = new GameObject(objectName);
+
+        SpriteRenderer spriteRenderer = interactable.AddComponent<SpriteRenderer>();
+        spriteRenderer.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("Sprites/Default.sprite");
+        spriteRenderer.color = Color.white;
+
+        BoxCollider2D collider = interactable.AddComponent<BoxCollider2D>();
+        collider.size = Vector2.one;
+
+        TryAddComponentByName(interactable, "DraggableObject2D");
+        TryAddComponentByName(interactable, "InteractableObject2D");
+
+        Undo.RegisterCreatedObjectUndo(interactable, "Create Interactable Object");
+        EditorUtility.SetDirty(interactable);
+        return interactable;
+    }
+
+    private static int GetNextNumberedIndex(string baseName)
+    {
+        int index = 1;
+        while (GameObject.Find(baseName + " (" + index + ")") != null)
+            index++;
+        return index;
     }
 
     private static bool CreateEmptyObject(string arguments)
