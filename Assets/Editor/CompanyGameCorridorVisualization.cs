@@ -25,28 +25,20 @@ public static class CompanyGameCorridorVisualization
     }
 
     [MenuItem("Tools/Company Game/Corridors/Show All Corridors")]
-    private static void ShowAllCorridors()
-    {
-        ShowAll = true;
-    }
+    private static void ShowAllCorridors() => ShowAll = true;
 
     [MenuItem("Tools/Company Game/Corridors/Hide All Corridors")]
-    private static void HideAllCorridors()
-    {
-        ShowAll = false;
-    }
+    private static void HideAllCorridors() => ShowAll = false;
 
     [MenuItem("Tools/Company Game/Corridors/Toggle All Corridor Visibility")]
-    private static void ToggleAllCorridors()
-    {
-        ShowAll = !ShowAll;
-    }
+    private static void ToggleAllCorridors() => ShowAll = !ShowAll;
 
     private static void DrawAllCorridors(SceneView sceneView)
     {
         if (!ShowAll) return;
 
-        CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>(FindObjectsSortMode.None);
+        // Unity 6+ API: no deprecated FindObjectsSortMode argument.
+        CompanyGameCorridor[] corridors = Object.FindObjectsByType<CompanyGameCorridor>();
         foreach (CompanyGameCorridor corridor in corridors)
         {
             if (corridor == null) continue;
