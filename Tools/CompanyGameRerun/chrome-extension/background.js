@@ -1,7 +1,6 @@
-const CHATGPT_URL = "https://chatgpt.com/";
 const CHATGPT_HOSTS = ["chatgpt.com", "www.chatgpt.com"];
 const STORAGE_KEY = "companygame_rerun_state";
-const DEFAULT_STATE = { running:false, sequence:0, taskId:"", status:"stopped", lastError:"", lastResponse:"", lastResponseAt:0, startedAt:0, targetTabId:0 };
+const DEFAULT_STATE = { running:false, sequence:0, taskId:"", status:"stopped", lastError:"", lastResponse:"", lastResponseAt:0, startedAt:0, targetTabId:null };
 const HARD_STOP_MS = 20 * 60 * 1000;
 const CHECKPOINT_MS = 18 * 60 * 1000;
 let dispatching = false;
@@ -26,47 +25,6 @@ async function setState(patch) {
   await chrome.storage.local.set({ [STORAGE_KEY]: state });
   return state;
 }
-
-async function resolveTargetTab() {
-  const state = await getState();
-  if (state.targetTabId) {
-    try {
-      const tab = await chrome.tabs.get(state.targetTabId);
-      if (isChatGPTTab(tab)) return tab.id;
-    } catch (_) {}
-  }
-
-  const tabs = await chrome.tabs.query({ active:true, lastFocusedWindow:true });
-  const active = tabs.find(isChatGPTTab);
-  if (active?.id) return active.id;
-
-  const all = await chrome.tabs.query({});
-  const existing = all.find(isChatGPTTab);
-  if (existing?.id) return existing.id;
-
-  throw new Error("현재 열려 있는 ChatGPT 대화를 찾지 못했습니다. ChatGPT 작업 대화를 먼저 열어주세요.");
-}
-
-async function ensureContentScript(tabId) {
-  try {
-    const response = await chrome.tabs.sendMessage(tabId, { type:"ping" });
-    if (response?.ok) return;
-  } catch (_) {}
-  await chrome.scripting.executeScript({ target:{ tabId }, files:["content.js"] });
-  await new Promise(resolve => setTimeout(resolve, 500));
-  const response = await chrome.tabs.sendMessage(tabId, { type:"ping" });
-  if (!response?.ok) throw new Error("현재 ChatGPT 대화에 content script를 연결하지 못했습니다.");
-}
-
-async function sendPrompt(prompt) {
-  const tabId = await resolveTargetTab();
-  await ensureContentScript(tabId);
-  await setState({ targetTabId:tabId });
-  const result = await chrome.tabs.sendMessage(tabId, { type:"send_prompt", prompt });
-  if (!result?.ok) throw new Error(result?.error || "현재 ChatGPT 대화로 메시지를 전송하지 못했습니다.");
-  return { ok:true, tabId };
-}
-
 function clearRunTimers() {
   if (checkpointTimer) clearTimeout(checkpointTimer);
   if (hardStopTimer) clearTimeout(hardStopTimer);
@@ -76,6 +34,33 @@ function clearRunTimers() {
 async function stopRun(status="stopped", error="") {
   clearRunTimers();
   await setState({ running:false, status, lastError:error });
+}
+async function resolveTargetTab() {
+  const state = await getState();
+  if (state.targetTabId) {
+    try {
+      const tab = await chrome.tabs.get(state.targetTabId);
+      if (isChatGPTTab(tab)) return tab.id;
+    } catch (_) {}
+  }
+  throw new Error("현재 Rerun이 연결된 ChatGPT 대화 탭을 찾지 못했습니다. START는 작업 대화를 연 ChatGPT 탭에서 눌러주세요.");
+}
+async function ensureContentScript(tabId) {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type:"ping" });
+    if (response?.ok) return;
+  } catch (_) {}
+  await chrome.scripting.executeScript({ target:{tabId}, files:["content.js"] });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  const response = await chrome.tabs.sendMessage(tabId, { type:"ping" });
+  if (!response?.ok) throw new Error("현재 ChatGPT 대화에 content script를 연결하지 못했습니다.");
+}
+async function sendPrompt(prompt) {
+  const tabId = await resolveTargetTab();
+  await ensureContentScript(tabId);
+  const result = await chrome.tabs.sendMessage(tabId, { type:"send_prompt", prompt });
+  if (!result?.ok) throw new Error(result?.error || "현재 ChatGPT 대화로 메시지를 전송하지 못했습니다.");
+  return { ok:true, tabId };
 }
 
 async function dispatchNext(reason="CONTINUE") {
@@ -88,7 +73,6 @@ async function dispatchNext(reason="CONTINUE") {
       await stopRun("blocked", "20분 hard stop에 도달했습니다.");
       return;
     }
-
     const nextSequence = state.sequence + 1;
     const prompt = `${reason} — CompanyGame Rerun 작업 authorization.
 현재 작업 범위는 게임적인 부분만이다.
@@ -108,9 +92,9 @@ Sequence: ${nextSequence}
 - 모든 acceptance criteria를 실제로 통과하면 응답에 정확히 COMPLETE를 포함한다.
 
 현재 GitHub 프로젝트 상태와 result/error JSON을 먼저 확인하고 sequence ${nextSequence}의 미완료 지점부터 진행해.
-검증된 작업은 반복하지 말고 실제 오류가 있으면 직접 수정한 뒤 검증해.`;
+검증된 작업은 반복하지 말고 실제 오류가 있으면 직접 수정한 뒤 검증해.
 
-    // Advance sequence before sending so a response can never dispatch the same task twice.
+작업 결과를 사람이 이해하기 쉽게 먼저 요약하고, 응답의 마지막 줄에 CONTINUE 또는 COMPLETE 중 하나만 적어.`;
     await setState({ sequence:nextSequence, status:"continue", lastError:"", lastResponse:"", lastResponseAt:0 });
     await sendPrompt(prompt);
   } catch (error) {
@@ -120,52 +104,35 @@ Sequence: ${nextSequence}
   }
 }
 
-async function startRun() {
-  if (dispatching) return;
+async function startRun(senderTabId) {
+  if (!senderTabId) throw new Error("START를 누른 ChatGPT 탭을 확인하지 못했습니다.");
+  const tab = await chrome.tabs.get(senderTabId);
+  if (!isChatGPTTab(tab)) throw new Error("START는 작업 중인 ChatGPT 대화 탭에서 눌러주세요.");
   clearRunTimers();
-  const targetTabId = await resolveTargetTab();
-  const state = await setState({ running:true, sequence:0, taskId:"corridor-employee-movement", status:"continue", lastError:"", lastResponse:"", lastResponseAt:0, startedAt:Date.now(), targetTabId });
-
+  await setState({ running:true, sequence:0, taskId:"corridor-employee-movement", status:"continue", lastError:"", lastResponse:"", lastResponseAt:0, startedAt:Date.now(), targetTabId:tab.id });
   checkpointTimer = setTimeout(async () => {
     const current = await getState();
     if (!current.running || current.status !== "continue") return;
-    await setState({ status:"continue", lastError:"18분 checkpoint: 자동 작업을 계속합니다." });
-    await dispatchNext("CHECKPOINT");
+    await setState({ lastError:"18분 checkpoint: 자동 작업을 계속합니다." });
   }, CHECKPOINT_MS);
   hardStopTimer = setTimeout(() => stopRun("blocked", "20분 hard stop에 도달했습니다."), HARD_STOP_MS);
   await dispatchNext("START");
-  return state;
+  return getState();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "get_state") { getState().then(state => sendResponse({ok:true,state})); return true; }
-  if (message?.type === "set_state") { setState(message.patch || {}).then(state => sendResponse({ok:true,state})); return true; }
-  if (message?.type === "start_run") { startRun().then(state => sendResponse({ok:true,state})).catch(error => sendResponse({ok:false,error:error?.message||String(error)})); return true; }
-  if (message?.type === "continue_run") {
-    getState().then(async state => {
-      if (!state.taskId) throw new Error("재개할 task가 없습니다.");
-      clearRunTimers();
-      await setState({running:true,status:"continue",lastError:""});
-      hardStopTimer = setTimeout(() => stopRun("blocked", "20분 hard stop에 도달했습니다."), HARD_STOP_MS);
-      await dispatchNext("CONTINUE");
-      sendResponse({ok:true});
-    }).catch(error => sendResponse({ok:false,error:error?.message||String(error)}));
-    return true;
-  }
-  if (message?.type === "stop_run") { stopRun("stopped", "").then(() => sendResponse({ok:true})); return true; }
-  if (message?.type === "send_prompt") {
-    sendPrompt(String(message.prompt || "")).then(async result => { await setState({status:"continue",lastError:""}); sendResponse(result); }).catch(async error => { const text=error?.message||String(error); await setState({status:"blocked",lastError:text,running:false}); sendResponse({ok:false,error:text}); });
-    return true;
-  }
+  if (message?.type === "get_state") { getState().then(state=>sendResponse({ok:true,state})); return true; }
+  if (message?.type === "start_run") { startRun(sender.tab?.id).then(state=>sendResponse({ok:true,state})).catch(error=>sendResponse({ok:false,error:error?.message||String(error)})); return true; }
+  if (message?.type === "continue_run") { getState().then(async state=>{ if(!state.taskId) throw new Error("재개할 task가 없습니다."); await setState({running:true,status:"continue",lastError:""}); hardStopTimer=setTimeout(()=>stopRun("blocked","20분 hard stop에 도달했습니다."),HARD_STOP_MS); await dispatchNext("CONTINUE"); sendResponse({ok:true}); }).catch(error=>sendResponse({ok:false,error:error?.message||String(error)})); return true; }
+  if (message?.type === "stop_run") { stopRun("stopped","").then(()=>sendResponse({ok:true})); return true; }
   if (message?.type === "assistant_response") {
     const text=String(message.text||"");
     const timestamp=Number(message.timestamp||Date.now());
-    setState({lastResponse:text,lastResponseAt:timestamp}).then(async () => {
+    setState({lastResponse:text,lastResponseAt:timestamp}).then(async()=>{
       const state=await getState();
-      if (!state.running || state.status!=="continue") return;
-      if (timestamp <= state.lastResponseAt && !text) return;
-      if (/\bCOMPLETE\b/i.test(text)) { await stopRun("complete", ""); return; }
-      if (/\bCONTINUE\b/i.test(text)) await dispatchNext("CONTINUE");
+      if(!state.running || state.status!=="continue") return;
+      if(/\bCOMPLETE\b/i.test(text)){ await stopRun("complete",""); return; }
+      if(/\bCONTINUE\b\s*$/i.test(text.trim())) await dispatchNext("CONTINUE");
     }).catch(()=>{});
     return;
   }
