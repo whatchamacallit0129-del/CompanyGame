@@ -26,7 +26,6 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
         string normalized = NormalizeType(type);
         if (!string.IsNullOrEmpty(objectId))
         {
-            // IDs are permanent. Renaming/reclassification never changes an existing ID.
             if (string.IsNullOrEmpty(objectType)) objectType = normalized;
             EditorUtility.SetDirty(this);
             return;
@@ -78,29 +77,6 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
             if (identity != null && identity.objectId == id) return true;
         }
         return false;
-    }
-
-    [InitializeOnLoadMethod]
-    private static void Initialize()
-    {
-        EditorApplication.hierarchyChanged -= EnsureSceneObjectsHaveIds;
-        EditorApplication.hierarchyChanged += EnsureSceneObjectsHaveIds;
-    }
-
-    private static void EnsureSceneObjectsHaveIds()
-    {
-        if (Application.isPlaying) return;
-        GameObject[] objects = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        foreach (GameObject go in objects)
-        {
-            if (go == null) continue;
-            CompanyGameObjectIdentity identity = go.GetComponent<CompanyGameObjectIdentity>();
-            if (identity == null)
-            {
-                identity = Undo.AddComponent<CompanyGameObjectIdentity>(go);
-                identity.EnsureIdentity("Object");
-            }
-        }
     }
 #endif
 }
