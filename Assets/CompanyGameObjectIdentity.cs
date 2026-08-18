@@ -1,6 +1,8 @@
 using System;
-using UnityEditor;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 [DisallowMultipleComponent]
 public sealed class CompanyGameObjectIdentity : MonoBehaviour
@@ -19,7 +21,8 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
 
         if (!string.IsNullOrEmpty(objectId))
         {
-            if (string.IsNullOrEmpty(objectType)) objectType = normalized;
+            if (string.IsNullOrEmpty(objectType) || objectType.Equals("Object", StringComparison.OrdinalIgnoreCase))
+                objectType = normalized;
             return;
         }
 
@@ -29,25 +32,35 @@ public sealed class CompanyGameObjectIdentity : MonoBehaviour
 
     private static string NormalizeType(string type)
     {
-        return string.IsNullOrWhiteSpace(type) ? "Object" : type.Trim();
+        if (string.IsNullOrWhiteSpace(type)) return "Object";
+        string value = type.Trim();
+        if (value.Equals("직원", StringComparison.OrdinalIgnoreCase) || value.Equals("Employee", StringComparison.OrdinalIgnoreCase)) return "Employee";
+        if (value.Equals("방", StringComparison.OrdinalIgnoreCase) || value.Equals("Room", StringComparison.OrdinalIgnoreCase)) return "Room";
+        if (value.Equals("부서", StringComparison.OrdinalIgnoreCase) || value.Equals("Department", StringComparison.OrdinalIgnoreCase)) return "Department";
+        if (value.Equals("기계", StringComparison.OrdinalIgnoreCase) || value.Equals("Machine", StringComparison.OrdinalIgnoreCase)) return "Machine";
+        return value;
     }
 
     private static string GenerateId(string type)
     {
         string prefix = GetPrefix(type);
         string key = "CompanyGame.Identity.Next." + type.ToUpperInvariant();
+#if UNITY_EDITOR
         int next = Math.Max(1, EditorPrefs.GetInt(key, 1));
         string id = prefix + "-" + next.ToString("D6");
         EditorPrefs.SetInt(key, next + 1);
         return id;
+#else
+        return prefix + "-" + Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant();
+#endif
     }
 
     private static string GetPrefix(string type)
     {
-        if (type.Equals("Employee", StringComparison.OrdinalIgnoreCase)) return "EMP";
-        if (type.Equals("Room", StringComparison.OrdinalIgnoreCase)) return "ROOM";
-        if (type.Equals("Department", StringComparison.OrdinalIgnoreCase)) return "DEPT";
-        if (type.Equals("Machine", StringComparison.OrdinalIgnoreCase)) return "MACH";
+        if (type.Equals("Employee", StringComparison.OrdinalIgnoreCase) || type.Equals("직원", StringComparison.OrdinalIgnoreCase)) return "EMP";
+        if (type.Equals("Room", StringComparison.OrdinalIgnoreCase) || type.Equals("방", StringComparison.OrdinalIgnoreCase)) return "ROOM";
+        if (type.Equals("Department", StringComparison.OrdinalIgnoreCase) || type.Equals("부서", StringComparison.OrdinalIgnoreCase)) return "DEPT";
+        if (type.Equals("Machine", StringComparison.OrdinalIgnoreCase) || type.Equals("기계", StringComparison.OrdinalIgnoreCase)) return "MACH";
         return "OBJ";
     }
 }
