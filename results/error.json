@@ -1,7 +1,7 @@
 {
   "success": false,
   "type": "Error",
-  "timestamp": "2026-08-18 19:13:49.706",
+  "timestamp": "2026-08-18 19:14:10.210",
   "message": "[Company Game] Agent error: System.IO.IOException: Cannot create 'D:\\CompanyProject\\command.json' because a file or directory with the same name already exists.\r\n  at System.IO.FileSystem.CreateDirectory (System.String fullPath) [0x00145] in <816f70bc2a9c4332b0bd119906a8d40e>:0 \r\n  at System.IO.Directory.CreateDirectory (System.String path) [0x0002c] in <816f70bc2a9c4332b0bd119906a8d40e>:0 \r\n  at CompanyGameCommandAgent.WriteResult (System.String projectPath, System.String id, System.String raw, CompanyGameCommandAgent+CommandResult result) [0x0000b] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:299 \r\n  at CompanyGameCommandAgent.ExecuteAndReport (System.String raw, System.String path) [0x0003b] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:52 \r\n  at CompanyGameCommandAgent.CheckCommand () [0x0002b] in D:\\CompanyProject\\Assets\\Editor\\CompanyGameCommandAgent.cs:37 ",
   "stackTrace": "UnityEngine.Debug:LogError (object)\nCompanyGameCommandAgent:CheckCommand () (at Assets/Editor/CompanyGameCommandAgent.cs:39)\nUnityEditor.EditorApplication:Internal_CallUpdateFunctions ()\n"
 }
