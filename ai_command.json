@@ -1,1 +1,1 @@
-{"command":"PING","args":""}
+{"command":"CREATE_GAMEOBJECT","args":"AI_Test"}
