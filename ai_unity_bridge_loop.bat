@@ -65,22 +65,23 @@ exit /b 0
 
 :PUBLISH_RESULT
 rem Unity consumes ai_command.json and writes results/ai_result.json.
-rem Commit only the bridge queue/result files so unrelated local work is never staged.
-git status --porcelain -- ai_command.json ai_command.processing.json results/ai_result.json > "%TEMP%\company_ai_status.txt"
+rem ai_command.processing.json is a transient local lock file and is NEVER committed.
+rem Commit only the queue/result files so unrelated local work is never staged.
+git status --porcelain -- ai_command.json results/ai_result.json > "%TEMP%\company_ai_status.txt"
 set HAS_BRIDGE_CHANGE=0
 for /f "delims=" %%A in (%TEMP%\company_ai_status.txt) do set HAS_BRIDGE_CHANGE=1
 if "!HAS_BRIDGE_CHANGE!"=="0" exit /b 0
 
-git add -- ai_command.json ai_command.processing.json results/ai_result.json
-git diff --cached --quiet -- ai_command.json ai_command.processing.json results/ai_result.json
+git add -- ai_command.json results/ai_result.json
+git diff --cached --quiet -- ai_command.json results/ai_result.json
 if not errorlevel 1 (
-    git reset -- ai_command.json ai_command.processing.json results/ai_result.json >nul 2>&1
+    git reset -- ai_command.json results/ai_result.json >nul 2>&1
     exit /b 0
 )
 
 git commit -m "AI Unity bridge result" >nul 2>&1
 if errorlevel 1 (
-    git reset -- ai_command.json ai_command.processing.json results/ai_result.json >nul 2>&1
+    git reset -- ai_command.json results/ai_result.json >nul 2>&1
     echo [%date% %time%] [WARN] Could not commit bridge result.
     exit /b 1
 )
