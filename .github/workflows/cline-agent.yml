@@ -1,0 +1,70 @@
+name: Cline Agent
+run-name: Cline Agent • ${{ github.event_name }} • ${{ github.actor }}
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+  repository_dispatch:
+    types: [cline-agent]
+
+permissions:
+  contents: read
+
+jobs:
+  cline-agent:
+    name: Cline Agent / inspect and verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v6
+
+      - name: Agent start
+        run: |
+          echo "=== Cline Agent START ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor: ${{ github.actor }}"
+
+      - name: Inspect AI bridge
+        run: |
+          echo "=== AI ↔ Unity Bridge ==="
+          test -f Documentation/AI_Unity_GitHub_Bridge.md && echo "Bridge documentation: OK" || echo "Bridge documentation: MISSING"
+          test -f Assets/Editor/CompanyGameAIBridge.cs && echo "Unity bridge: OK" || echo "Unity bridge: MISSING"
+          test -f CompanyChatRelay/relay_server.py && echo "Chat relay: OK" || echo "Chat relay: MISSING"
+
+      - name: Inspect agent queues
+        run: |
+          echo "=== Agent queue state ==="
+          for d in agent-queue/pending agent-queue/processing agent-results; do
+            if [ -d "$d" ]; then
+              echo "[$d]"
+              find "$d" -maxdepth 1 -type f -print | sort || true
+            else
+              echo "$d: not present"
+            fi
+          done
+
+      - name: Validate project bridge files
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for path in [Path('ai_command.json'), Path('results/ai_result.json')]:
+              if path.exists():
+                  try:
+                      json.loads(path.read_text(encoding='utf-8-sig'))
+                      print(f'{path}: valid JSON')
+                  except Exception as exc:
+                      print(f'{path}: JSON validation failed: {exc}')
+                      raise
+              else:
+                  print(f'{path}: not present (allowed)')
+          PY
+
+      - name: Agent finish
+        run: |
+          echo "=== Cline Agent FINISH ==="
+          echo "Workflow completed. Detailed logs are available in each step above."
