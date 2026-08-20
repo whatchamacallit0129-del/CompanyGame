@@ -2,7 +2,7 @@ name: Cline Issue Assistant
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   contents: write
@@ -10,84 +10,72 @@ permissions:
 
 jobs:
   respond:
-    # This runner must be the Windows PC that has Cline and the Unity project.
-    runs-on: [self-hosted, windows]
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    environment: cline-actions
     steps:
-      - name: Check for authorized @cline mention
+      - name: Check for @cline mention
         id: detect
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7
         with:
           script: |
             const body = context.payload.comment?.body || "";
             const isPR = !!context.payload.issue?.pull_request;
-            const association = context.payload.comment?.author_association || "";
-            const authorized = ["OWNER", "MEMBER", "COLLABORATOR"].includes(association);
             const hit = body.toLowerCase().includes("@cline");
-            core.setOutput("hit", (!isPR && authorized && hit) ? "true" : "false");
+            core.setOutput("hit", (!isPR && hit) ? "true" : "false");
             core.setOutput("issue_number", String(context.payload.issue?.number || ""));
             core.setOutput("issue_url", context.payload.issue?.html_url || "");
             core.setOutput("comment_body", body);
 
       - name: Checkout repository
         if: steps.detect.outputs.hit == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify Cline CLI
+      - name: Setup Node.js
         if: steps.detect.outputs.hit == 'true'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          cline --version
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
 
-      - name: Run Cline on the local Windows/Unity machine
+      - name: Install Cline CLI
         if: steps.detect.outputs.hit == 'true'
-        shell: powershell
+        run: npm install -g cline
+
+      - name: Configure Cline Authentication
+        if: steps.detect.outputs.hit == 'true'
+        run: cline auth --provider openrouter --apikey "${{ secrets.OPENROUTER_API_KEY }}"
+
+      - name: Run Cline
+        if: steps.detect.outputs.hit == 'true'
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ISSUE_URL: ${{ steps.detect.outputs.issue_url }}
           COMMENT: ${{ steps.detect.outputs.comment_body }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host '=== CLINE START ==='
-          Write-Host "Issue: $env:ISSUE_URL"
-          Write-Host "Task: $env:COMMENT"
-          Write-Host 'Cline will work in the checked-out Unity repository.'
+          set -euo pipefail
+          echo "=== CLINE START ==="
+          echo "Issue: ${ISSUE_URL}"
+          echo "Request: ${COMMENT}"
+          echo "=== CLINE EXECUTION ==="
+          cline --yolo --json "Work directly on the repository for this GitHub issue. Execute the user's request, make the actual code/project changes, and verify the result. User request: ${COMMENT} Issue: ${ISSUE_URL}"
 
-          $prompt = @"
-You are operating on the CompanyGame Unity project in this checked-out repository.
-The user issued this GitHub request:
-
-$env:COMMENT
-
-Perform the requested task directly in the project. Use Act mode and make the actual changes.
-Do not merely explain what to do. Inspect the project as needed, perform the work, and verify the result before finishing.
-"@
-
-          cline --yolo --json --provider openrouter --key $env:OPENROUTER_API_KEY --cwd $env:GITHUB_WORKSPACE $prompt
-          if ($LASTEXITCODE -ne 0) { throw "Cline exited with code $LASTEXITCODE" }
-
-      - name: Publish Cline changes
+      - name: Commit Cline changes
         if: steps.detect.outputs.hit == 'true'
-        shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop'
           git config user.name 'Cline Agent'
           git config user.email 'cline-agent@users.noreply.github.com'
-          git status --short
           git add -A
-          if (git diff --cached --quiet) {
-            Write-Host 'No repository changes to commit.'
+          if git diff --cached --quiet; then
+            echo 'No repository changes.'
             exit 0
-          }
+          fi
           git commit -m 'Cline: execute issue task'
           git push origin HEAD:main
 
-      - name: Post response to Issue
+      - name: Post response
         if: steps.detect.outputs.hit == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7
         env:
           ISSUE_NUMBER: ${{ steps.detect.outputs.issue_number }}
         with:
@@ -96,5 +84,5 @@ Do not merely explain what to do. Inspect the project as needed, perform the wor
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: Number(process.env.ISSUE_NUMBER),
-              body: "Cline finished the requested task on the self-hosted Windows runner. Check the Actions run and the latest commit for the result."
+              body: "Cline finished the requested task. Check this Actions run for the live execution log and the latest commit for the changes."
             });
